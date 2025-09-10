@@ -61,42 +61,11 @@ func main() {
 	}
 
 	switch flag.Arg(0) {
-	case "migrate":
-		path := flag.Arg(1)
-
-		f, err := os.Open(path)
-		if err != nil {
-			slog.Error("migrate db", "err", err)
+	case "import":
+		if err := importData(context.Background(), db, flag.Arg(1)); err != nil {
+			slog.Error("import data", "err", err)
 			return
 		}
-		defer f.Close()
-
-		r := csv.NewReader(f)
-		r.Comma = '\t'
-
-		recs, err := r.ReadAll()
-		if err != nil {
-			slog.Error("read records", "err", err)
-			return
-		}
-
-		const siz = 5000
-		for recs := range slices.Chunk(recs, siz) {
-			histories := make([]History, 0, siz)
-			for _, r := range recs {
-				var his History
-				his.Speed, _ = strconv.ParseFloat(r[0], 64)
-				his.Altitude, _ = strconv.ParseFloat(r[1], 64)
-				his.Latitude, _ = strconv.ParseFloat(r[2], 64)
-				his.Longitude, _ = strconv.ParseFloat(r[3], 64)
-				histories = append(histories, his)
-			}
-			if err := sqlb.Exec(context.Background(), db, "insert into history ?", sqlb.InsertSQL(histories...)); err != nil {
-				slog.Error("insert db", "err", err)
-				continue
-			}
-		}
-
 		return
 	}
 
@@ -179,5 +148,47 @@ func dbMigrate(ctx context.Context, db *sql.DB) error {
 			return fmt.Errorf("run migration %d: %w", i, err)
 		}
 	}
+	return nil
+}
+
+func importData(ctx context.Context, db *sql.DB, srcFile string) error {
+	f, err := os.Open(srcFile)
+	if err != nil {
+		return fmt.Errorf("migrate db: %w", err)
+	}
+	defer f.Close()
+
+	r := csv.NewReader(f)
+	r.Comma = '\t'
+
+	records, err := r.ReadAll()
+	if err != nil {
+		return fmt.Errorf("read records: %w", err)
+	}
+
+	hist := make([]History, 0, 5000)
+	for records := range slices.Chunk(records, cap(hist)) {
+		hist = hist[:0]
+
+		if len(records[0]) != 5 {
+			return fmt.Errorf("bad data")
+		}
+
+		for _, record := range records {
+			var h History
+			h.Speed, _ = strconv.ParseFloat(record[1], 64)
+			h.Altitude, _ = strconv.ParseFloat(record[2], 64)
+			h.Latitude, _ = strconv.ParseFloat(record[3], 64)
+			h.Longitude, _ = strconv.ParseFloat(record[4], 64)
+
+			hist = append(hist, h)
+		}
+
+		if err := sqlb.Exec(ctx, db, "insert into history ?", sqlb.InsertSQL(hist...)); err != nil {
+			slog.Error("insert db", "err", err)
+			continue
+		}
+	}
+
 	return nil
 }
