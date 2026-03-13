@@ -6,3 +6,5 @@ create table history (
     latitude real not null default 0,
     longitude real not null default 0
 );
+-- 2026.03.13 add time --
+alter table history add column time datetime not null default '';

@@ -10,10 +10,11 @@ import (
 	"encoding/json"
 	"flag"
 	"fmt"
+	"io"
 	"log/slog"
+	"net"
 	"net/http"
 	"net/url"
-	"os"
 	"slices"
 	"strconv"
 	"time"
@@ -49,56 +50,76 @@ func main() {
 	}
 	defer db.Close()
 
+	ctx := context.Background()
 	if lev := slog.LevelDebug; slog.Default().Enabled(context.Background(), lev) {
-		sqlb.SetLog(func(ctx context.Context, typ string, duration time.Duration, query string) {
+		ctx = sqlb.WithLogFunc(ctx, func(ctx context.Context, typ string, query string, duration time.Duration) {
 			slog.Log(ctx, lev, typ, "took", duration, "query", query)
 		})
 	}
 
-	if err := dbMigrate(context.Background(), db); err != nil {
-		slog.Error("migrate db", "err", err)
+	if err := dbMigrate(ctx, db); err != nil {
+		slog.ErrorContext(ctx, "migrate db", "err", err)
 		return
 	}
 
-	switch flag.Arg(0) {
-	case "import":
-		if err := importData(context.Background(), db, flag.Arg(1)); err != nil {
-			slog.Error("import data", "err", err)
-			return
-		}
-		return
-	}
+	mux := http.NewServeMux()
 
-	// TODO: stream output instead of buffering whole response
-	http.HandleFunc("GET /history", func(w http.ResponseWriter, r *http.Request) {
-		gj := GeoJSON{
-			Type: "FeatureCollection",
+	mux.HandleFunc("GET /history", func(w http.ResponseWriter, r *http.Request) {
+		q := sqlb.NewQuery("select * from history where 1=1")
+		if v := r.URL.Query().Get("start"); v != "" {
+			q.Append(" and time >= ?", v)
 		}
-		for h, err := range sqlb.Iter[History](r.Context(), db, "select * from history") {
+		if v := r.URL.Query().Get("end"); v != "" {
+			q.Append(" and time <= ?", v)
+		}
+		q.Append(" order by time")
+
+		rc := http.NewResponseController(w)
+		enc := json.NewEncoder(w)
+
+		query, args := q.SQL()
+		for h, err := range sqlb.IterRows[History](r.Context(), db, query, args...) {
 			if err != nil {
-				slog.Error("select history", "err", err)
+				slog.ErrorContext(ctx, "select history", "err", err)
 				continue
 			}
-			gj.Features = append(gj.Features, Feature{
+			if err := enc.Encode(Feature{
 				Type: "Feature",
 				Geometry: Geometry{
 					Type:        "Point",
 					Coordinates: [3]float64{h.Longitude, h.Latitude, h.Altitude},
 				},
-			})
+			}); err != nil {
+				slog.ErrorContext(ctx, "encode feature", "err", err)
+				return
+			}
+			rc.Flush()
 		}
-		if err := json.NewEncoder(w).Encode(gj); err != nil {
-			slog.Error("encode g", "err", err)
+	})
+
+	mux.HandleFunc("POST /import", func(w http.ResponseWriter, r *http.Request) {
+		defer r.Body.Close()
+		if err := importData(r.Context(), db, r.Body); err != nil {
+			http.Error(w, err.Error(), http.StatusInternalServerError)
 			return
 		}
 	})
 
-	http.HandleFunc("GET /", func(w http.ResponseWriter, r *http.Request) {
-		http.ServeFile(w, r, "index.html")
+	mux.HandleFunc("GET /", func(w http.ResponseWriter, r *http.Request) {
+		w.Header().Set("Content-Type", "text/html")
+		w.Write(indexHTML)
 	})
 
-	if err := http.ListenAndServe(*listenAddr, nil); err != nil {
-		slog.Error("start http", "err", err)
+	server := &http.Server{
+		Addr:        *listenAddr,
+		Handler:     mux,
+		BaseContext: func(l net.Listener) context.Context { return ctx },
+	}
+
+	slog.InfoContext(ctx, "starting http", "listen_addr", *listenAddr)
+
+	if err := server.ListenAndServe(); err != nil {
+		slog.ErrorContext(ctx, "start http", "err", err)
 		return
 	}
 }
@@ -118,9 +139,10 @@ type Geometry struct {
 	Coordinates [3]float64 `json:"coordinates"`
 }
 
-//go:generate go tool sqlbgen History
+//go:generate go tool sqlbgen -to main.gen.go -generated ID History
 type History struct {
 	ID        int
+	Time      time.Time
 	Speed     float64
 	Altitude  float64
 	Latitude  float64
@@ -129,6 +151,9 @@ type History struct {
 
 //go:embed schema.sql
 var schema []byte
+
+//go:embed index.html
+var indexHTML []byte
 
 func dbMigrate(ctx context.Context, db *sql.DB) error {
 	var nextVer int
@@ -151,14 +176,8 @@ func dbMigrate(ctx context.Context, db *sql.DB) error {
 	return nil
 }
 
-func importData(ctx context.Context, db *sql.DB, srcFile string) error {
-	f, err := os.Open(srcFile)
-	if err != nil {
-		return fmt.Errorf("migrate db: %w", err)
-	}
-	defer f.Close()
-
-	r := csv.NewReader(f)
+func importData(ctx context.Context, db *sql.DB, src io.Reader) error {
+	r := csv.NewReader(src)
 	r.Comma = '\t'
 
 	records, err := r.ReadAll()
@@ -170,12 +189,13 @@ func importData(ctx context.Context, db *sql.DB, srcFile string) error {
 	for records := range slices.Chunk(records, cap(hist)) {
 		hist = hist[:0]
 
-		if len(records[0]) != 5 {
-			return fmt.Errorf("bad data")
+		if w, g := 5, len(records[0]); w != g {
+			return fmt.Errorf("expected %d columns, got %d", w, g)
 		}
 
 		for _, record := range records {
 			var h History
+			h.Time, _ = time.Parse(time.RFC3339Nano, record[0])
 			h.Speed, _ = strconv.ParseFloat(record[1], 64)
 			h.Altitude, _ = strconv.ParseFloat(record[2], 64)
 			h.Latitude, _ = strconv.ParseFloat(record[3], 64)
@@ -185,7 +205,7 @@ func importData(ctx context.Context, db *sql.DB, srcFile string) error {
 		}
 
 		if err := sqlb.Exec(ctx, db, "insert into history ?", sqlb.InsertSQL(hist...)); err != nil {
-			slog.Error("insert db", "err", err)
+			slog.ErrorContext(ctx, "insert db", "err", err)
 			continue
 		}
 	}
