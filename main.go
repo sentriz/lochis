@@ -12,6 +12,7 @@ import (
 	"fmt"
 	"io"
 	"log/slog"
+	"math"
 	"net"
 	"net/http"
 	"net/url"
@@ -65,35 +66,56 @@ func main() {
 	mux := http.NewServeMux()
 
 	mux.HandleFunc("GET /history", func(w http.ResponseWriter, r *http.Request) {
-		q := sqlb.NewQuery("select * from history where 1=1")
-		if v := r.URL.Query().Get("start"); v != "" {
-			q.Append(" and time >= ?", v)
-		}
-		if v := r.URL.Query().Get("end"); v != "" {
-			q.Append(" and time <= ?", v)
-		}
-		q.Append(" order by time")
+		params := r.URL.Query()
 
-		rc := http.NewResponseController(w)
+		var south, north, west, east float64
+		fmt.Sscanf(params.Get("bbox"), "%f,%f,%f,%f", &west, &south, &east, &north)
+
+		zoom, _ := strconv.ParseFloat(params.Get("zoom"), 64)
+
+		// ensure grid cells are at least 1/50th of the viewport so we
+		// never return more than ~2500 (50x50) cells
+		gridSize := 3.6 / math.Pow(2, zoom)
+		if latSpan := (north - south) / 50; latSpan > gridSize {
+			gridSize = latSpan
+		}
+
+		q := sqlb.NewQuery(`
+			select
+				avg(h.latitude) as lat,
+				avg(h.longitude) as lng,
+				avg(h.altitude) as alt,
+				count(*) as weight
+			from history h, history_rtree r
+			where h.id = r.id
+			and r.max_lat >= ? and r.min_lat <= ?
+			and r.max_lng >= ? and r.min_lng <= ?`,
+			south, north, west, east,
+		)
+		if v := params.Get("start"); v != "" {
+			q.Append("and h.time >= ?", v)
+		}
+		if v := params.Get("end"); v != "" {
+			q.Append("and h.time <= ?", v)
+		}
+		q.Append("group by round(h.latitude / ?), round(h.longitude / ?)", gridSize, gridSize)
+
 		enc := json.NewEncoder(w)
 
-		query, args := q.SQL()
-		for h, err := range sqlb.IterRows[History](r.Context(), db, query, args...) {
+		var lat, lng, alt, weight = 0.0, 0.0, 0.0, 0
+		for err := range sqlb.IterScanRows(r.Context(), db, sqlb.Values(&lat, &lng, &alt, &weight), "?", q) {
 			if err != nil {
-				slog.ErrorContext(ctx, "select history", "err", err)
+				slog.ErrorContext(ctx, "scan grouped history", "err", err)
 				continue
 			}
-			if err := enc.Encode(Feature{
+			enc.Encode(Feature{
 				Type: "Feature",
 				Geometry: Geometry{
 					Type:        "Point",
-					Coordinates: [3]float64{h.Longitude, h.Latitude, h.Altitude},
+					Coordinates: [3]float64{lng, lat, alt},
 				},
-			}); err != nil {
-				slog.ErrorContext(ctx, "encode feature", "err", err)
-				return
-			}
-			rc.Flush()
+				Properties: map[string]any{"weight": weight},
+			})
 		}
 	})
 
@@ -130,8 +152,9 @@ type GeoJSON struct {
 }
 
 type Feature struct {
-	Type     string   `json:"type"`
-	Geometry Geometry `json:"geometry"`
+	Type       string         `json:"type"`
+	Geometry   Geometry       `json:"geometry"`
+	Properties map[string]any `json:"properties,omitempty"`
 }
 
 type Geometry struct {
