@@ -37,21 +37,101 @@
         zoom: 2,
       });
 
-      let sourceAdded = false;
-      let fetchController = null;
+      map.on("load", () => {
+        load();
+        loadData();
+      });
+      map.on("moveend", () => {
+        loadData();
+      });
 
+      function load() {
+        map.addSource("history", {
+          type: "geojson",
+          data: { type: "FeatureCollection", features: [] },
+        });
+        map.addLayer({
+          id: "heatmap",
+          type: "heatmap",
+          source: "history",
+          paint: {
+            "heatmap-weight": [
+              "interpolate",
+              ["exponential", 0.5],
+              ["get", "weight"],
+              1,
+              0,
+              10,
+              0.15,
+              100,
+              0.4,
+              1000,
+              0.7,
+              10000,
+              1,
+            ],
+            "heatmap-intensity": [
+              "interpolate",
+              ["linear"],
+              ["zoom"],
+              0,
+              1.5,
+              5,
+              2,
+              10,
+              2.5,
+              15,
+              3,
+            ],
+            "heatmap-color": [
+              "interpolate",
+              ["linear"],
+              ["heatmap-density"],
+              0,
+              "rgba(0, 0, 255, 0)",
+              0.2,
+              "rgba(0, 128, 255, 0.5)",
+              0.4,
+              "rgba(0, 255, 128, 0.7)",
+              0.6,
+              "rgba(255, 255, 0, 0.8)",
+              1,
+              "rgba(255, 0, 0, 1)",
+            ],
+            "heatmap-radius": [
+              "interpolate",
+              ["linear"],
+              ["zoom"],
+              0,
+              20,
+              5,
+              35,
+              10,
+              30,
+              15,
+              40,
+            ],
+            "heatmap-opacity": [
+              "interpolate",
+              ["linear"],
+              ["zoom"],
+              0,
+              0.9,
+              15,
+              0.4,
+            ],
+          },
+        });
+      }
+
+      let fetchController = null;
       async function loadData() {
         if (fetchController) fetchController.abort();
         fetchController = new AbortController();
 
         const bounds = map.getBounds();
         const zoom = map.getZoom();
-        const bbox = [
-          bounds.getWest(),
-          bounds.getSouth(),
-          bounds.getEast(),
-          bounds.getNorth(),
-        ].join(",");
+        const bbox = `${bounds.getWest()},${bounds.getSouth()},${bounds.getEast()},${bounds.getNorth()}`;
 
         let text;
         try {
@@ -63,80 +143,13 @@
           throw e;
         }
 
-        const features = text
-          .trim()
-          .split("\n")
-          .filter(Boolean)
-          .map(JSON.parse);
-        const data = { type: "FeatureCollection", features };
+        const trimmed = text.trim();
+        const features = trimmed ? JSON.parse("[" + trimmed.replaceAll("\n", ",") + "]") : [];
 
-        if (!sourceAdded) {
-          map.addSource("history", { type: "geojson", data });
-
-          map.addLayer({
-            id: "heatmap",
-            type: "heatmap",
-            source: "history",
-            paint: {
-              "heatmap-weight": [
-                "interpolate", ["exponential", 0.5], ["get", "weight"],
-                1, 0,
-                10, 0.15,
-                100, 0.4,
-                1000, 0.7,
-                10000, 1,
-              ],
-              "heatmap-intensity": [
-                "interpolate",
-                ["linear"],
-                ["zoom"],
-                0, 1.5,
-                5, 2,
-                10, 2.5,
-                15, 3,
-              ],
-              "heatmap-color": [
-                "interpolate",
-                ["linear"],
-                ["heatmap-density"],
-                0,
-                "rgba(0, 0, 255, 0)",
-                0.2,
-                "rgba(0, 128, 255, 0.5)",
-                0.4,
-                "rgba(0, 255, 128, 0.7)",
-                0.6,
-                "rgba(255, 255, 0, 0.8)",
-                1,
-                "rgba(255, 0, 0, 1)",
-              ],
-              "heatmap-radius": [
-                "interpolate",
-                ["linear"],
-                ["zoom"],
-                0, 20,
-                5, 35,
-                10, 30,
-                15, 40,
-              ],
-              "heatmap-opacity": [
-                "interpolate",
-                ["linear"],
-                ["zoom"],
-                0, 0.9,
-                15, 0.4,
-              ],
-            },
-          });
-
-          sourceAdded = true;
-        } else {
-          map.getSource("history").setData(data);
-        }
+        map
+          .getSource("history")
+          .setData({ type: "FeatureCollection", features });
       }
-
-      map.on("load", loadData);
-      map.on("moveend", loadData);
     </script>
   </body>
 </html>
