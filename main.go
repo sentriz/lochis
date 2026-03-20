@@ -1,5 +1,3 @@
-// $ cd "/home/senan/scrap/go.h6hi"; and go run "main.go"
-
 package main
 
 import (

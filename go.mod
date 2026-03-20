@@ -1,10 +1,10 @@
-module scrap
+module go.senan.xyz/lochis
 
 go 1.25.0
 
 require (
-	github.com/ncruces/go-sqlite3 v0.31.1
-	go.senan.xyz/sqlb v0.3.11
+	github.com/ncruces/go-sqlite3 v0.32.0
+	go.senan.xyz/sqlb v0.4.0
 	golang.org/x/tools v0.43.0
 )
 
