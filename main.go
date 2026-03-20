@@ -73,6 +73,19 @@ func main() {
 
 		zoom, _ := strconv.ParseFloat(params.Get("zoom"), 64)
 
+		q := sqlb.NewQuery(`
+			select avg(latitude) as lat, avg(longitude) as lng, avg(altitude) as alt, count(*) as weight
+			from history
+			where latitude between ? and ? and longitude between ? and ?`,
+			south, north, west, east,
+		)
+		if v := params.Get("start"); v != "" {
+			q.Append("and time >= ?", v)
+		}
+		if v := params.Get("end"); v != "" {
+			q.Append("and time <= ?", v)
+		}
+
 		// ensure grid cells are at least 1/50th of the viewport so we
 		// never return more than ~2500 (50x50) cells
 		gridSize := 3.6 / math.Pow(2, zoom)
@@ -80,30 +93,12 @@ func main() {
 			gridSize = latSpan
 		}
 
-		q := sqlb.NewQuery(`
-			select
-				avg(h.latitude) as lat,
-				avg(h.longitude) as lng,
-				avg(h.altitude) as alt,
-				count(*) as weight
-			from history h, history_rtree r
-			where h.id = r.id
-			and r.max_lat >= ? and r.min_lat <= ?
-			and r.max_lng >= ? and r.min_lng <= ?`,
-			south, north, west, east,
-		)
-		if v := params.Get("start"); v != "" {
-			q.Append("and h.time >= ?", v)
-		}
-		if v := params.Get("end"); v != "" {
-			q.Append("and h.time <= ?", v)
-		}
-		q.Append("group by round(h.latitude / ?), round(h.longitude / ?)", gridSize, gridSize)
+		q.Append("group by round(latitude / ?), round(longitude / ?)", gridSize, gridSize)
 
 		enc := json.NewEncoder(w)
 
 		var lat, lng, alt, weight = 0.0, 0.0, 0.0, 0
-		for err := range sqlb.IterScanRows(r.Context(), db, sqlb.Values(&lat, &lng, &alt, &weight), "?", q) {
+		for err := range sqlb.RowsScan(r.Context(), db, sqlb.Values(&lat, &lng, &alt, &weight), "?", q) {
 			if err != nil {
 				slog.ErrorContext(ctx, "scan grouped history", "err", err)
 				continue
