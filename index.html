@@ -29,12 +29,18 @@
     <div id="map"></div>
 
     <script>
+      const hash = window.location.hash.slice(1);
+      const parts = hash.split("/");
+      const initZoom = parts.length === 3 ? parseFloat(parts[0]) : 2;
+      const initLat = parts.length === 3 ? parseFloat(parts[1]) : 51.5;
+      const initLng = parts.length === 3 ? parseFloat(parts[2]) : 0;
+
       const map = new maplibregl.Map({
         container: "map",
         style:
           "https://api.maptiler.com/maps/basic/style.json?key=get_your_own_OpIi9ZULNHzrESv6T2vL",
-        center: [0, 51.5],
-        zoom: 2,
+        center: [initLng, initLat],
+        zoom: initZoom,
       });
 
       map.on("load", () => {
@@ -43,6 +49,9 @@
       });
       map.on("moveend", () => {
         loadData();
+        const z = map.getZoom().toFixed(2);
+        const c = map.getCenter();
+        window.history.replaceState(null, "", `#${z}/${c.lat.toFixed(5)}/${c.lng.toFixed(5)}`);
       });
 
       function load() {
@@ -50,75 +59,78 @@
           type: "geojson",
           data: { type: "FeatureCollection", features: [] },
         });
+        const heatmapColor = [
+          "interpolate",
+          ["linear"],
+          ["heatmap-density"],
+          0,
+          "rgba(0, 0, 255, 0)",
+          0.15,
+          "rgba(0, 100, 255, 0.25)",
+          0.3,
+          "rgba(0, 128, 255, 0.5)",
+          0.5,
+          "rgba(0, 255, 128, 0.6)",
+          0.7,
+          "rgba(255, 255, 0, 0.8)",
+          1,
+          "rgba(255, 0, 0, 1)",
+        ];
+
+        // low zoom: strict weights, suppresses flight paths
         map.addLayer({
-          id: "heatmap",
+          id: "heatmap-low",
           type: "heatmap",
           source: "history",
+          maxzoom: 15,
           paint: {
             "heatmap-weight": [
               "interpolate",
               ["exponential", 0.5],
               ["get", "weight"],
-              1,
-              0,
-              10,
-              0.15,
-              100,
-              0.4,
-              1000,
-              0.7,
-              10000,
-              1,
+              1, 0, 10, 0.03, 50, 0.15, 200, 0.4, 1000, 0.75, 10000, 1,
             ],
             "heatmap-intensity": [
-              "interpolate",
-              ["linear"],
-              ["zoom"],
-              0,
-              1.5,
-              5,
-              2,
-              10,
-              2.5,
-              15,
-              3,
+              "interpolate", ["linear"], ["zoom"],
+              0, 2, 5, 2.5, 10, 2, 15, 3,
             ],
-            "heatmap-color": [
-              "interpolate",
-              ["linear"],
-              ["heatmap-density"],
-              0,
-              "rgba(0, 0, 255, 0)",
-              0.2,
-              "rgba(0, 128, 255, 0.5)",
-              0.4,
-              "rgba(0, 255, 128, 0.7)",
-              0.6,
-              "rgba(255, 255, 0, 0.8)",
-              1,
-              "rgba(255, 0, 0, 1)",
-            ],
+            "heatmap-color": heatmapColor,
             "heatmap-radius": [
-              "interpolate",
-              ["linear"],
-              ["zoom"],
-              0,
-              20,
-              5,
-              35,
-              10,
-              30,
-              15,
-              40,
+              "interpolate", ["linear"], ["zoom"],
+              0, 12, 5, 28, 10, 30, 14, 25,
             ],
             "heatmap-opacity": [
+              "interpolate", ["linear"], ["zoom"],
+              0, 0.9, 14, 0.7,
+            ],
+          },
+        });
+
+        // high zoom: generous weights, shows individual points
+        map.addLayer({
+          id: "heatmap-high",
+          type: "heatmap",
+          source: "history",
+          minzoom: 15,
+          paint: {
+            "heatmap-weight": [
               "interpolate",
-              ["linear"],
-              ["zoom"],
-              0,
-              0.9,
-              15,
-              0.4,
+              ["exponential", 0.5],
+              ["get", "weight"],
+              1, 0.1, 5, 0.2, 20, 0.4, 100, 0.6, 1000, 0.85, 10000, 1,
+            ],
+            "heatmap-intensity": [
+              "interpolate", ["linear"], ["zoom"],
+              15, 3, 18, 5,
+            ],
+            "heatmap-color": heatmapColor,
+            "heatmap-radius": [
+              "interpolate", ["linear"], ["zoom"],
+              15, 20, 16, 15, 18, 10,
+            ],
+            "heatmap-opacity": [
+              "interpolate", ["linear"], ["zoom"],
+              15, 0.7, 18, 0.5,
             ],
           },
         });
@@ -144,7 +156,9 @@
         }
 
         const trimmed = text.trim();
-        const features = trimmed ? JSON.parse("[" + trimmed.replaceAll("\n", ",") + "]") : [];
+        const features = trimmed
+          ? JSON.parse("[" + trimmed.replaceAll("\n", ",") + "]")
+          : [];
 
         map
           .getSource("history")

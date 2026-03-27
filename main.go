@@ -84,13 +84,7 @@ func main() {
 			q.Append("and time <= ?", v)
 		}
 
-		// ensure grid cells are at least 1/50th of the viewport so we
-		// never return more than ~2500 (50x50) cells
 		gridSize := 3.6 / math.Pow(2, zoom)
-		if latSpan := (north - south) / 50; latSpan > gridSize {
-			gridSize = latSpan
-		}
-
 		q.Append("group by round(latitude / ?), round(longitude / ?)", gridSize, gridSize)
 
 		enc := json.NewEncoder(w)
