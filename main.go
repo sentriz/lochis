@@ -4,7 +4,6 @@ import (
 	"context"
 	"database/sql"
 	"embed"
-	"io/fs"
 	"encoding/csv"
 	"encoding/json"
 	"flag"
@@ -115,8 +114,7 @@ func main() {
 		}
 	})
 
-	uiContent, _ := fs.Sub(uiFS, "ui")
-	mux.Handle("GET /", http.FileServer(http.FS(uiContent)))
+	mux.Handle("GET /", http.FileServer(http.FS(indexFS)))
 
 	server := &http.Server{
 		Addr:        *listenAddr,
@@ -161,8 +159,8 @@ type History struct {
 //go:embed schema.sql
 var schema []byte
 
-//go:embed ui/index.html ui/app.js
-var uiFS embed.FS
+//go:embed index.html main.js
+var indexFS embed.FS
 
 func dbMigrate(ctx context.Context, db *sql.DB) error {
 	var nextVer int
