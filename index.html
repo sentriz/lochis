@@ -1,11 +1,7 @@
 <!doctype html>
 <html lang="en">
   <head>
-    <title>Create a heatmap layer</title>
-    <meta
-      property="og:description"
-      content="Visualize earthquake frequency by location using a heatmap layer."
-    />
+    <title>lochis</title>
     <meta charset="utf-8" />
     <meta name="viewport" content="width=device-width, initial-scale=1" />
     <link
@@ -14,19 +10,24 @@
     />
     <script src="https://unpkg.com/maplibre-gl@5.0.1/dist/maplibre-gl.js"></script>
     <style>
-      body {
-        margin: 0;
-        padding: 0;
+      body { margin: 0; padding: 0; }
+      html, body, #map { height: 100%; }
+      #viewmode {
+        position: absolute; bottom: 24px; left: 50%; transform: translateX(-50%);
+        z-index: 1; background: #fffc; padding: 6px 14px; border-radius: 20px;
+        font: 12px/1 sans-serif; display: flex; align-items: center; gap: 8px;
+        box-shadow: 0 1px 4px rgba(0,0,0,0.2); user-select: none;
       }
-      html,
-      body,
-      #map {
-        height: 100%;
-      }
+      #viewmode input { width: 120px; }
     </style>
   </head>
   <body>
     <div id="map"></div>
+    <div id="viewmode">
+      <span>Frequent</span>
+      <input type="range" min="0" max="1" step="0.01" value="0" id="blend">
+      <span>Explore</span>
+    </div>
 
     <script>
       const hash = window.location.hash.slice(1);
@@ -77,12 +78,10 @@
           "rgba(255, 0, 0, 1)",
         ];
 
-        // low zoom: strict weights, suppresses flight paths
         map.addLayer({
-          id: "heatmap-low",
+          id: "frequent",
           type: "heatmap",
           source: "history",
-          maxzoom: 15,
           paint: {
             "heatmap-weight": [
               "interpolate",
@@ -92,49 +91,66 @@
             ],
             "heatmap-intensity": [
               "interpolate", ["linear"], ["zoom"],
-              0, 2, 5, 2.5, 8, 2.5, 12, 3, 15, 3,
+              0, 2, 5, 2.5, 8, 2.5, 12, 3, 15, 3, 18, 5,
             ],
             "heatmap-color": heatmapColor,
             "heatmap-radius": [
               "interpolate", ["linear"], ["zoom"],
-              0, 12, 5, 28, 10, 30, 14, 25,
+              0, 12, 5, 28, 10, 30, 14, 25, 16, 15, 18, 10,
             ],
             "heatmap-opacity": [
               "interpolate", ["linear"], ["zoom"],
-              0, 0.9, 14, 0.7,
+              0, 0.9, 14, 0.7, 18, 0.5,
             ],
           },
         });
 
-        // high zoom: generous weights, shows individual points
         map.addLayer({
-          id: "heatmap-high",
-          type: "heatmap",
+          id: "explore",
+          type: "circle",
           source: "history",
-          minzoom: 15,
           paint: {
-            "heatmap-weight": [
-              "interpolate",
-              ["exponential", 0.5],
-              ["get", "weight"],
-              1, 0.1, 5, 0.2, 20, 0.4, 100, 0.6, 1000, 0.85, 10000, 1,
+            "circle-color": [
+              "interpolate", ["exponential", 0.5], ["get", "weight"],
+              1, "rgba(0,80,255,0.1)",
+              10, "rgba(255,30,0,0.8)",
+              50, "rgba(255,160,0,0.7)",
+              200, "rgba(0,180,255,0.4)",
+              1000, "rgba(0,80,255,0.25)",
+              10000, "rgba(0,40,255,0.1)",
             ],
-            "heatmap-intensity": [
+            "circle-radius": [
               "interpolate", ["linear"], ["zoom"],
-              15, 3, 18, 5,
+              0, ["interpolate", ["exponential", 0.5], ["get", "weight"],
+                1, 1, 10, 4, 50, 3, 200, 2, 1000, 1.5, 10000, 1],
+              10, ["interpolate", ["exponential", 0.5], ["get", "weight"],
+                1, 2, 10, 8, 50, 6, 200, 4, 1000, 3, 10000, 2],
+              16, ["interpolate", ["exponential", 0.5], ["get", "weight"],
+                1, 3, 10, 12, 50, 9, 200, 6, 1000, 4, 10000, 3],
             ],
-            "heatmap-color": heatmapColor,
-            "heatmap-radius": [
-              "interpolate", ["linear"], ["zoom"],
-              15, 20, 16, 15, 18, 10,
-            ],
-            "heatmap-opacity": [
-              "interpolate", ["linear"], ["zoom"],
-              15, 0.7, 18, 0.5,
-            ],
+            "circle-blur": 0.4,
+            "circle-opacity": 0,
           },
         });
       }
+
+      // blend slider: crossfades from heatmap (frequency) to circles (explore)
+      const BASE_OPACITY = [0.9, 0.7, 0.5]; // heatmap opacity at zoom 0, 14, 18
+
+      function applyBlend(t) {
+        // fade heatmap out
+        const ho = BASE_OPACITY.map(v => v * (1 - t));
+        map.setPaintProperty("frequent", "heatmap-opacity", [
+          "interpolate", ["linear"], ["zoom"],
+          0, ho[0], 14, ho[1], 18, ho[2],
+        ]);
+        // fade circles in
+        map.setPaintProperty("explore", "circle-opacity", t);
+      }
+
+      document.getElementById("blend").addEventListener("input", (e) => {
+        applyBlend(parseFloat(e.target.value));
+      });
 
       let fetchController = null;
       async function loadData() {
