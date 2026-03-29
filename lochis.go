@@ -27,7 +27,7 @@ import (
 func main() {
 	var (
 		listenAddr = flag.String("listen-addr", "", "listen addr for web interface")
-		dbPath     = flag.String("db-path", "main.db", "db path for web interface")
+		dbPath     = flag.String("db-path", "lochis.db", "db path for web interface")
 	)
 	flag.Parse()
 
@@ -146,7 +146,7 @@ type Geometry struct {
 	Coordinates [3]float64 `json:"coordinates"`
 }
 
-//go:generate go tool sqlbgen -to main.gen.go -generated ID History
+//go:generate go tool sqlbgen -to lochis.gen.go -generated ID History
 type History struct {
 	ID        int
 	Time      time.Time
@@ -159,7 +159,7 @@ type History struct {
 //go:embed schema.sql
 var schema []byte
 
-//go:embed index.html main.js
+//go:embed index.html lochis.js
 var indexFS embed.FS
 
 func dbMigrate(ctx context.Context, db *sql.DB) error {
