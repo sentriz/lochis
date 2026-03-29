@@ -3,7 +3,8 @@ package main
 import (
 	"context"
 	"database/sql"
-	_ "embed"
+	"embed"
+	"io/fs"
 	"encoding/csv"
 	"encoding/json"
 	"flag"
@@ -114,15 +115,8 @@ func main() {
 		}
 	})
 
-	mux.HandleFunc("GET /app.js", func(w http.ResponseWriter, r *http.Request) {
-		w.Header().Set("Content-Type", "application/javascript")
-		w.Write(appJS)
-	})
-
-	mux.HandleFunc("GET /", func(w http.ResponseWriter, r *http.Request) {
-		w.Header().Set("Content-Type", "text/html")
-		w.Write(indexHTML)
-	})
+	uiContent, _ := fs.Sub(uiFS, "ui")
+	mux.Handle("GET /", http.FileServer(http.FS(uiContent)))
 
 	server := &http.Server{
 		Addr:        *listenAddr,
@@ -167,11 +161,8 @@ type History struct {
 //go:embed schema.sql
 var schema []byte
 
-//go:embed index.html
-var indexHTML []byte
-
-//go:embed app.js
-var appJS []byte
+//go:embed ui/index.html ui/app.js
+var uiFS embed.FS
 
 func dbMigrate(ctx context.Context, db *sql.DB) error {
 	var nextVer int
