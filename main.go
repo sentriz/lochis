@@ -114,6 +114,11 @@ func main() {
 		}
 	})
 
+	mux.HandleFunc("GET /app.js", func(w http.ResponseWriter, r *http.Request) {
+		w.Header().Set("Content-Type", "application/javascript")
+		w.Write(appJS)
+	})
+
 	mux.HandleFunc("GET /", func(w http.ResponseWriter, r *http.Request) {
 		w.Header().Set("Content-Type", "text/html")
 		w.Write(indexHTML)
@@ -164,6 +169,9 @@ var schema []byte
 
 //go:embed index.html
 var indexHTML []byte
+
+//go:embed app.js
+var appJS []byte
 
 func dbMigrate(ctx context.Context, db *sql.DB) error {
 	var nextVer int
