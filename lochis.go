@@ -153,6 +153,7 @@ type History struct {
 	Altitude  float64
 	Latitude  float64
 	Longitude float64
+	TagID     sql.NullInt64
 }
 
 //go:embed schema.sql
@@ -183,6 +184,11 @@ func dbMigrate(ctx context.Context, db *sql.DB) error {
 }
 
 func importData(ctx context.Context, db *sql.DB, src io.Reader) error {
+	var tagIDs = map[string]int{}
+	if err := sqlb.ScanRows(ctx, db, sqlb.MapValue(tagIDs), "select name, id from tags"); err != nil {
+		return err
+	}
+
 	r := csv.NewReader(src)
 	r.Comma = '\t'
 
@@ -195,7 +201,7 @@ func importData(ctx context.Context, db *sql.DB, src io.Reader) error {
 	for records := range slices.Chunk(records, cap(hist)) {
 		hist = hist[:0]
 
-		if w, g := 5, len(records[0]); w != g {
+		if w, g := 6, len(records[0]); w != g {
 			return fmt.Errorf("expected %d columns, got %d", w, g)
 		}
 
@@ -206,6 +212,11 @@ func importData(ctx context.Context, db *sql.DB, src io.Reader) error {
 			h.Altitude, _ = strconv.ParseFloat(record[2], 64)
 			h.Latitude, _ = strconv.ParseFloat(record[3], 64)
 			h.Longitude, _ = strconv.ParseFloat(record[4], 64)
+
+			if tagID := tagIDs[record[5]]; tagID > 0 {
+				h.TagID.Int64 = int64(tagID)
+				h.TagID.Valid = true
+			}
 
 			hist = append(hist, h)
 		}

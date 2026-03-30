@@ -10,7 +10,7 @@ import (
 func _() {
 	// Validate the struct fields haven't changed. If this doesn't compile you probably need to `go generate` again.
 	var h History
-	_ = History{h.ID, h.Time, h.Speed, h.Altitude, h.Latitude, h.Longitude}
+	_ = History{h.ID, h.Time, h.Speed, h.Altitude, h.Latitude, h.Longitude, h.TagID}
 }
 
 func (History) IsGenerated(c string) bool {
@@ -22,7 +22,7 @@ func (History) IsGenerated(c string) bool {
 }
 
 func (h History) Values() []sql.NamedArg {
-	return []sql.NamedArg{sql.Named("id", h.ID), sql.Named("time", h.Time), sql.Named("speed", h.Speed), sql.Named("altitude", h.Altitude), sql.Named("latitude", h.Latitude), sql.Named("longitude", h.Longitude)}
+	return []sql.NamedArg{sql.Named("id", h.ID), sql.Named("time", h.Time), sql.Named("speed", h.Speed), sql.Named("altitude", h.Altitude), sql.Named("latitude", h.Latitude), sql.Named("longitude", h.Longitude), sql.Named("tag_id", h.TagID)}
 }
 
 func (h *History) ScanFrom(columns []string, rows *sql.Rows, buf []any) error {
@@ -40,6 +40,8 @@ func (h *History) ScanFrom(columns []string, rows *sql.Rows, buf []any) error {
 			buf = append(buf, &h.Latitude)
 		case "longitude":
 			buf = append(buf, &h.Longitude)
+		case "tag_id":
+			buf = append(buf, &h.TagID)
 		default:
 			return fmt.Errorf("unknown column name %q", c)
 		}
