@@ -87,22 +87,17 @@ func main() {
 		gridSize := 3.6 / math.Pow(2, zoom)
 		q.Append("group by round(latitude / ?), round(longitude / ?)", gridSize, gridSize)
 
-		enc := json.NewEncoder(w)
+		var f Feature
+		f.Type = "Feature"
+		f.Geometry.Type = "Point"
 
-		var lat, lng, alt, weight = 0.0, 0.0, 0.0, 0
-		for err := range sqlb.RowsScan(r.Context(), db, sqlb.Values(&lat, &lng, &alt, &weight), "?", q) {
+		enc := json.NewEncoder(w)
+		for err := range sqlb.RowsScan(r.Context(), db, sqlb.Values(&f.Geometry.Coordinates[1], &f.Geometry.Coordinates[0], &f.Geometry.Coordinates[2], &f.Properties.Weight), "?", q) {
 			if err != nil {
 				slog.ErrorContext(ctx, "scan grouped history", "err", err)
 				continue
 			}
-			enc.Encode(Feature{
-				Type: "Feature",
-				Geometry: Geometry{
-					Type:        "Point",
-					Coordinates: [3]float64{lng, lat, alt},
-				},
-				Properties: map[string]any{"weight": weight},
-			})
+			enc.Encode(&f)
 		}
 	})
 
@@ -136,14 +131,18 @@ type GeoJSON struct {
 }
 
 type Feature struct {
-	Type       string         `json:"type"`
-	Geometry   Geometry       `json:"geometry"`
-	Properties map[string]any `json:"properties,omitempty"`
+	Type       string     `json:"type"`
+	Geometry   Geometry   `json:"geometry"`
+	Properties Properties `json:"properties,omitzero"`
 }
 
 type Geometry struct {
 	Type        string     `json:"type"`
 	Coordinates [3]float64 `json:"coordinates"`
+}
+
+type Properties struct {
+	Weight int `json:"weight"`
 }
 
 //go:generate go tool sqlbgen -to lochis.gen.go -generated ID History
