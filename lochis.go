@@ -72,7 +72,7 @@ func main() {
 		zoom, _ := strconv.ParseFloat(params.Get("zoom"), 64)
 
 		q := sqlb.NewQuery(`
-			select avg(latitude) as lat, avg(longitude) as lng, avg(altitude) as alt, count(*) as weight
+			select avg(latitude) as lat, avg(longitude) as lng, avg(altitude) as alt, count(*) as weight, coalesce(tag_id, 0) as tag_id
 			from history
 			where latitude between ? and ? and longitude between ? and ?`,
 			south, north, west, east,
@@ -85,20 +85,30 @@ func main() {
 		}
 
 		gridSize := 3.6 / math.Pow(2, zoom)
-		q.Append("group by round(latitude / ?), round(longitude / ?)", gridSize, gridSize)
+		q.Append("group by round(latitude / ?), round(longitude / ?), tag_id", gridSize, gridSize)
 
 		var f Feature
 		f.Type = "Feature"
 		f.Geometry.Type = "Point"
 
 		enc := json.NewEncoder(w)
-		for err := range sqlb.RowsScan(r.Context(), db, sqlb.Values(&f.Geometry.Coordinates[1], &f.Geometry.Coordinates[0], &f.Geometry.Coordinates[2], &f.Properties.Weight), "?", q) {
+		for err := range sqlb.RowsScan(r.Context(), db, sqlb.Values(&f.Geometry.Coordinates[1], &f.Geometry.Coordinates[0], &f.Geometry.Coordinates[2], &f.Properties.Weight, &f.Properties.TagID), "?", q) {
 			if err != nil {
 				slog.ErrorContext(ctx, "scan grouped history", "err", err)
 				continue
 			}
 			enc.Encode(&f)
 		}
+	})
+
+	mux.HandleFunc("GET /tags", func(w http.ResponseWriter, r *http.Request) {
+		var tags []Tag
+		if err := sqlb.ScanRows(r.Context(), db, sqlb.Append(&tags), "select * from tags"); err != nil {
+			slog.ErrorContext(ctx, "scan tags", "err", err)
+			http.Error(w, "error reading tags", http.StatusInternalServerError)
+			return
+		}
+		json.NewEncoder(w).Encode(tags)
 	})
 
 	mux.HandleFunc("POST /import", func(w http.ResponseWriter, r *http.Request) {
@@ -143,6 +153,14 @@ type Geometry struct {
 
 type Properties struct {
 	Weight int `json:"weight"`
+	TagID  int `json:"tag_id,omitempty"`
+}
+
+//go:generate go tool sqlbgen -to lochis_tag.gen.go -generated ID Tag
+type Tag struct {
+	ID     int    `json:"id"`
+	Name   string `json:"name"`
+	Colour string `json:"colour"`
 }
 
 //go:generate go tool sqlbgen -to lochis.gen.go -generated ID History

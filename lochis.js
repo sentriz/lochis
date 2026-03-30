@@ -3,7 +3,7 @@
 /** @import { ViewStateChangeEvent } from "@vis.gl/react-maplibre" */
 /** @import { MapLibreEvent, Map as MapLibreMap } from "maplibre-gl" */
 
-import React, { useState, useCallback, useRef } from "react";
+import React, { useState, useCallback, useRef, useEffect } from "react";
 import ReactDOM from "react-dom/client";
 import htm from "htm";
 import { Map, Source, Layer } from "react-map-gl/maplibre";
@@ -11,6 +11,7 @@ import { Map, Source, Layer } from "react-map-gl/maplibre";
 const html = htm.bind(React.createElement);
 
 /** @typedef {{ type: "FeatureCollection", features: object[] }} FeatureCollection */
+/** @typedef {{ id: number, name: string, colour: string }} Tag */
 
 /** @type {FeatureCollection} */
 const EMPTY_FC = { type: "FeatureCollection", features: [] };
@@ -30,8 +31,16 @@ function parseHash() {
 function App() {
   const [explore, setExplore] = useState(0);
   const [geojson, setGeojson] = useState(EMPTY_FC);
+  /** @type {[Tag[], React.Dispatch<React.SetStateAction<Tag[]>>]} */
+  const [tags, setTags] = useState([]);
   /** @type {React.RefObject<AbortController | null>} */
   const controllerRef = useRef(null);
+
+  useEffect(() => {
+    fetch("/tags")
+      .then((r) => r.json())
+      .then(setTags);
+  }, []);
 
   const loadData = useCallback((/** @type {MapLibreMap} */ map) => {
     if (controllerRef.current) controllerRef.current.abort();
@@ -79,6 +88,10 @@ function App() {
     [loadData],
   );
 
+  const tagColour = tags.length
+    ? ["match", ["get", "tag_id"], ...tags.flatMap((t) => [t.id, t.colour]), "transparent"]
+    : "transparent";
+
   const heatmapOpacity = [
     "interpolate",
     ["linear"],
@@ -104,6 +117,19 @@ function App() {
           id="frequent"
           type="heatmap"
           paint=${{ ...FREQUENT_PAINT, "heatmap-opacity": heatmapOpacity }}
+        />
+        <${Layer}
+          id="tagged"
+          type="circle"
+          filter=${[">", ["get", "tag_id"], 0]}
+          paint=${{
+            "circle-color": tagColour,
+            "circle-radius": ["interpolate", ["linear"], ["zoom"], 0, 5, 10, 9, 16, 14],
+            "circle-opacity": 0.9,
+            "circle-stroke-color": tagColour,
+            "circle-stroke-width": 1,
+            "circle-stroke-opacity": 0.5,
+          }}
         />
         <${Layer}
           id="explore"
