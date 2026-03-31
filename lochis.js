@@ -21,10 +21,17 @@ const EMPTY_FC = { type: "FeatureCollection", features: [] };
 function App() {
   const [geojson, setGeojson] = useState(EMPTY_FC);
   const [tags, setTags] = useState(/** @type {Tag[]} */ ([]));
-  const [layers, setLayers] = useState(/** @type {Record<string, LayerState>} */ ({
-    frequent: { visible: true, opacity: 0.9, label: "Frequent", colour: null },
-    explore: { visible: false, opacity: 0.7, label: "Explore", colour: null },
-  }));
+  const [layers, setLayers] = useState(
+    /** @type {Record<string, LayerState>} */ ({
+      frequent: {
+        visible: true,
+        opacity: 0.9,
+        label: "Frequent",
+        colour: null,
+      },
+      explore: { visible: false, opacity: 0.7, label: "Explore", colour: null },
+    }),
+  );
   /** @type {React.RefObject<AbortController | null>} */
   const controllerRef = useRef(null);
 
@@ -38,7 +45,12 @@ function App() {
     setLayers((prev) => {
       const next = { ...prev };
       for (const t of tags) {
-          next[`tag-${t.id}`] = { visible: true, opacity: 0.9, label: t.name, colour: t.colour };
+        next[`tag-${t.id}`] = {
+          visible: true,
+          opacity: 0.9,
+          label: t.name,
+          colour: t.colour,
+        };
       }
       return next;
     });
@@ -74,15 +86,15 @@ function App() {
       });
   };
 
-  const onMoveEnd = (/** @type {ViewStateChangeEvent} */ e) => loadData(e.target);
+  const onMoveEnd = (/** @type {ViewStateChangeEvent} */ e) =>
+    loadData(e.target);
 
   const onLoad = (/** @type {MapLibreEvent} */ e) => loadData(e.target);
 
-  const freq = layers.frequent;
-  const expl = layers.explore;
-
-  const updateLayer = (/** @type {string} */ id, /** @type {Partial<LayerState>} */ patch) =>
-    setLayers((prev) => ({ ...prev, [id]: { ...prev[id], ...patch } }));
+  const updateLayer = (
+    /** @type {string} */ id,
+    /** @type {Partial<LayerState>} */ patch,
+  ) => setLayers((prev) => ({ ...prev, [id]: { ...prev[id], ...patch } }));
 
   return html`
     <${Map}
@@ -98,19 +110,33 @@ function App() {
           id="frequent"
           type="heatmap"
           filter=${["!", ["has", "tag_id"]]}
-          paint=${{ ...FREQUENT_PAINT, "heatmap-opacity": freq.visible ? [
-            "interpolate", ["linear"], ["zoom"],
-            0, BASE_OPACITY[0] * freq.opacity,
-            14, BASE_OPACITY[1] * freq.opacity,
-            18, BASE_OPACITY[2] * freq.opacity,
-          ]
-            : 0 }}
+          paint=${{
+            ...FREQUENT_PAINT,
+            "heatmap-opacity": layers.frequent.visible
+              ? [
+                  "interpolate",
+                  ["linear"],
+                  ["zoom"],
+                  0,
+                  BASE_OPACITY[0] * layers.frequent.opacity,
+                  14,
+                  BASE_OPACITY[1] * layers.frequent.opacity,
+                  18,
+                  BASE_OPACITY[2] * layers.frequent.opacity,
+                ]
+              : 0,
+          }}
         />
         <${Layer}
           id="explore"
           type="circle"
           filter=${["!", ["has", "tag_id"]]}
-          paint=${{ ...EXPLORE_PAINT, "circle-opacity": expl.visible ? expl.opacity : 0 }}
+          paint=${{
+            ...EXPLORE_PAINT,
+            "circle-opacity": layers.explore.visible
+              ? layers.explore.opacity
+              : 0,
+          }}
         />
         ${tags.map((t) => {
           const l = layers[`tag-${t.id}`];
@@ -123,7 +149,17 @@ function App() {
               filter=${["==", ["get", "tag_id"], t.id]}
               paint=${{
                 "circle-color": t.colour,
-                "circle-radius": ["interpolate", ["linear"], ["zoom"], 0, 5, 10, 9, 16, 14],
+                "circle-radius": [
+                  "interpolate",
+                  ["linear"],
+                  ["zoom"],
+                  0,
+                  5,
+                  10,
+                  9,
+                  16,
+                  14,
+                ],
                 "circle-opacity": l.visible ? l.opacity : 0,
                 "circle-stroke-color": t.colour,
                 "circle-stroke-width": 1,
@@ -143,7 +179,9 @@ function App() {
  */
 function LayerControls({ layers, updateLayer }) {
   return html`
-    <div class="absolute bottom-4 left-4 z-10 bg-white/90 rounded-lg shadow px-3 py-2 text-xs font-sans select-none min-w-40">
+    <div
+      class="absolute bottom-4 left-4 z-10 bg-white/90 rounded-lg shadow px-3 py-2 text-xs font-sans select-none min-w-40"
+    >
       ${Object.entries(layers).map(
         ([id, l]) => html`
           <div key=${id} class="flex items-center gap-2 py-1">
@@ -152,7 +190,11 @@ function LayerControls({ layers, updateLayer }) {
               checked=${l.visible}
               onChange=${() => updateLayer(id, { visible: !l.visible })}
             />
-            ${l.colour && html`<span class="inline-block size-2.5 rounded-full" style=${{ backgroundColor: l.colour }} />`}
+            ${l.colour &&
+            html`<span
+              class="inline-block size-2.5 rounded-full"
+              style=${{ backgroundColor: l.colour }}
+            />`}
             <span class="flex-1">${l.label}</span>
             <input
               class="w-16"
@@ -161,8 +203,9 @@ function LayerControls({ layers, updateLayer }) {
               max="1"
               step="0.05"
               value=${l.opacity}
-              onInput=${(/** @type {Event & { target: HTMLInputElement }} */ e) =>
-                updateLayer(id, { opacity: parseFloat(e.target.value) })}
+              onInput=${(
+                /** @type {Event & { target: HTMLInputElement }} */ e,
+              ) => updateLayer(id, { opacity: parseFloat(e.target.value) })}
             />
           </div>
         `,
