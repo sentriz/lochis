@@ -6,7 +6,7 @@
 import React, { useState, useRef, useEffect } from "react";
 import ReactDOM from "react-dom/client";
 import htm from "htm";
-import { Map, Source, Layer } from "react-map-gl/maplibre";
+import { Map, Source, Layer } from "@vis.gl/react-maplibre";
 
 const html = htm.bind(React.createElement);
 
