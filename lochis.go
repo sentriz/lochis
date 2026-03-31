@@ -66,9 +66,10 @@ func main() {
 	mux.HandleFunc("GET /history", func(w http.ResponseWriter, r *http.Request) {
 		params := r.URL.Query()
 
-		var south, north, west, east float64
-		fmt.Sscanf(params.Get("bbox"), "%f,%f,%f,%f", &west, &south, &east, &north)
-
+		south, _ := strconv.ParseFloat(params.Get("south"), 64)
+		north, _ := strconv.ParseFloat(params.Get("north"), 64)
+		west, _ := strconv.ParseFloat(params.Get("west"), 64)
+		east, _ := strconv.ParseFloat(params.Get("east"), 64)
 		zoom, _ := strconv.ParseFloat(params.Get("zoom"), 64)
 
 		q := sqlb.NewQuery(`

@@ -3,7 +3,7 @@
 /** @import { ViewStateChangeEvent } from "@vis.gl/react-maplibre" */
 /** @import { MapLibreEvent, Map as MapLibreMap } from "maplibre-gl" */
 
-import React, { useState, useCallback, useRef, useEffect } from "react";
+import React, { useState, useRef, useEffect } from "react";
 import ReactDOM from "react-dom/client";
 import htm from "htm";
 import { Map, Source, Layer } from "react-map-gl/maplibre";
@@ -16,41 +16,49 @@ const html = htm.bind(React.createElement);
 /** @type {FeatureCollection} */
 const EMPTY_FC = { type: "FeatureCollection", features: [] };
 
-function parseHash() {
-  const parts = window.location.hash.slice(1).split("/");
-  if (parts.length === 3) {
-    return {
-      zoom: parseFloat(parts[0]),
-      latitude: parseFloat(parts[1]),
-      longitude: parseFloat(parts[2]),
-    };
-  }
-  return { zoom: 2, latitude: 51.5, longitude: 0 };
-}
+/** @typedef {{ visible: boolean, opacity: number, label: string, colour: string | null }} LayerState */
 
 function App() {
-  const [explore, setExplore] = useState(0);
   const [geojson, setGeojson] = useState(EMPTY_FC);
-  /** @type {[Tag[], React.Dispatch<React.SetStateAction<Tag[]>>]} */
-  const [tags, setTags] = useState([]);
+  const [tags, setTags] = useState(/** @type {Tag[]} */ ([]));
+  const [layers, setLayers] = useState(/** @type {Record<string, LayerState>} */ ({
+    frequent: { visible: true, opacity: 0.9, label: "Frequent", colour: null },
+    explore: { visible: false, opacity: 0.7, label: "Explore", colour: null },
+  }));
   /** @type {React.RefObject<AbortController | null>} */
   const controllerRef = useRef(null);
 
   useEffect(() => {
     fetch("/tags")
       .then((r) => r.json())
-      .then(setTags);
+      .then((/** @type {Tag[]} */ tags) => setTags(tags));
   }, []);
 
-  const loadData = useCallback((/** @type {MapLibreMap} */ map) => {
+  useEffect(() => {
+    setLayers((prev) => {
+      const next = { ...prev };
+      for (const t of tags) {
+          next[`tag-${t.id}`] = { visible: true, opacity: 0.9, label: t.name, colour: t.colour };
+      }
+      return next;
+    });
+  }, [tags]);
+
+  const loadData = (/** @type {MapLibreMap} */ map) => {
     if (controllerRef.current) controllerRef.current.abort();
     controllerRef.current = new AbortController();
 
     const bounds = map.getBounds();
     const zoom = map.getZoom();
-    const bbox = `${bounds.getWest()},${bounds.getSouth()},${bounds.getEast()},${bounds.getNorth()}`;
+    const params = new URLSearchParams({
+      west: String(bounds.getWest()),
+      south: String(bounds.getSouth()),
+      east: String(bounds.getEast()),
+      north: String(bounds.getNorth()),
+      zoom: String(zoom),
+    });
 
-    fetch(`/history?bbox=${bbox}&zoom=${zoom}`, {
+    fetch(`/history?${params}`, {
       signal: controllerRef.current.signal,
     })
       .then((r) => r.text())
@@ -64,49 +72,22 @@ function App() {
       .catch((e) => {
         if (e.name !== "AbortError") throw e;
       });
-  }, []);
+  };
 
-  const onMoveEnd = useCallback(
-    (/** @type {ViewStateChangeEvent} */ e) => {
-      const map = e.target;
-      const z = map.getZoom().toFixed(2);
-      const c = map.getCenter();
-      window.history.replaceState(
-        null,
-        "",
-        `#${z}/${c.lat.toFixed(5)}/${c.lng.toFixed(5)}`,
-      );
-      loadData(map);
-    },
-    [loadData],
-  );
+  const onMoveEnd = (/** @type {ViewStateChangeEvent} */ e) => loadData(e.target);
 
-  const onLoad = useCallback(
-    (/** @type {MapLibreEvent} */ e) => {
-      loadData(e.target);
-    },
-    [loadData],
-  );
+  const onLoad = (/** @type {MapLibreEvent} */ e) => loadData(e.target);
 
-  const tagColour = tags.length
-    ? ["match", ["get", "tag_id"], ...tags.flatMap((t) => [t.id, t.colour]), "transparent"]
-    : "transparent";
+  const freq = layers.frequent;
+  const expl = layers.explore;
 
-  const heatmapOpacity = [
-    "interpolate",
-    ["linear"],
-    ["zoom"],
-    0,
-    BASE_OPACITY[0] * (1 - explore),
-    14,
-    BASE_OPACITY[1] * (1 - explore),
-    18,
-    BASE_OPACITY[2] * (1 - explore),
-  ];
+  const updateLayer = (/** @type {string} */ id, /** @type {Partial<LayerState>} */ patch) =>
+    setLayers((prev) => ({ ...prev, [id]: { ...prev[id], ...patch } }));
 
   return html`
     <${Map}
-      initialViewState=${parseHash()}
+      initialViewState=${{ zoom: 2, latitude: 51.5, longitude: 0 }}
+      hash=${true}
       onMoveEnd=${onMoveEnd}
       onLoad=${onLoad}
       class="size-full"
@@ -116,43 +97,76 @@ function App() {
         <${Layer}
           id="frequent"
           type="heatmap"
-          paint=${{ ...FREQUENT_PAINT, "heatmap-opacity": heatmapOpacity }}
-        />
-        <${Layer}
-          id="tagged"
-          type="circle"
-          filter=${[">", ["get", "tag_id"], 0]}
-          paint=${{
-            "circle-color": tagColour,
-            "circle-radius": ["interpolate", ["linear"], ["zoom"], 0, 5, 10, 9, 16, 14],
-            "circle-opacity": 0.9,
-            "circle-stroke-color": tagColour,
-            "circle-stroke-width": 1,
-            "circle-stroke-opacity": 0.5,
-          }}
+          filter=${["!", ["has", "tag_id"]]}
+          paint=${{ ...FREQUENT_PAINT, "heatmap-opacity": freq.visible ? [
+            "interpolate", ["linear"], ["zoom"],
+            0, BASE_OPACITY[0] * freq.opacity,
+            14, BASE_OPACITY[1] * freq.opacity,
+            18, BASE_OPACITY[2] * freq.opacity,
+          ]
+            : 0 }}
         />
         <${Layer}
           id="explore"
           type="circle"
-          paint=${{ ...EXPLORE_PAINT, "circle-opacity": explore }}
+          filter=${["!", ["has", "tag_id"]]}
+          paint=${{ ...EXPLORE_PAINT, "circle-opacity": expl.visible ? expl.opacity : 0 }}
         />
+        ${tags.map((t) => {
+          const l = layers[`tag-${t.id}`];
+          if (!l) return null;
+          return html`
+            <${Layer}
+              key=${`tag-${t.id}`}
+              id=${`tag-${t.id}`}
+              type="circle"
+              filter=${["==", ["get", "tag_id"], t.id]}
+              paint=${{
+                "circle-color": t.colour,
+                "circle-radius": ["interpolate", ["linear"], ["zoom"], 0, 5, 10, 9, 16, 14],
+                "circle-opacity": l.visible ? l.opacity : 0,
+                "circle-stroke-color": t.colour,
+                "circle-stroke-width": 1,
+                "circle-stroke-opacity": l.visible ? l.opacity * 0.5 : 0,
+              }}
+            />
+          `;
+        })}
       <//>
     <//>
-    <div
-      class="absolute bottom-6 left-1/2 -translate-x-1/2 z-10 bg-white/80 px-3.5 py-1.5 rounded-full text-xs font-sans flex items-center gap-2 shadow select-none"
-    >
-      <span>Frequent</span>
-      <input
-        class="w-30"
-        type="range"
-        min="0"
-        max="1"
-        step="0.01"
-        value=${explore}
-        onInput=${(/** @type {Event & { target: HTMLInputElement }} */ e) =>
-      setExplore(parseFloat(e.target.value))}
-      />
-      <span>Explore</span>
+    <${LayerControls} layers=${layers} updateLayer=${updateLayer} />
+  `;
+}
+
+/**
+ * @param {{ layers: Record<string, LayerState>, updateLayer: (id: string, patch: Partial<LayerState>) => void }} props
+ */
+function LayerControls({ layers, updateLayer }) {
+  return html`
+    <div class="absolute bottom-4 left-4 z-10 bg-white/90 rounded-lg shadow px-3 py-2 text-xs font-sans select-none min-w-40">
+      ${Object.entries(layers).map(
+        ([id, l]) => html`
+          <div key=${id} class="flex items-center gap-2 py-1">
+            <input
+              type="checkbox"
+              checked=${l.visible}
+              onChange=${() => updateLayer(id, { visible: !l.visible })}
+            />
+            ${l.colour && html`<span class="inline-block size-2.5 rounded-full" style=${{ backgroundColor: l.colour }} />`}
+            <span class="flex-1">${l.label}</span>
+            <input
+              class="w-16"
+              type="range"
+              min="0"
+              max="1"
+              step="0.05"
+              value=${l.opacity}
+              onInput=${(/** @type {Event & { target: HTMLInputElement }} */ e) =>
+                updateLayer(id, { opacity: parseFloat(e.target.value) })}
+            />
+          </div>
+        `,
+      )}
     </div>
   `;
 }
