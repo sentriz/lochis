@@ -4,10 +4,12 @@ github.com/ncruces/go-sqlite3-wasm v1.0.5-0.20260329114232-2491c387476c h1:GLt+c
 github.com/ncruces/go-sqlite3-wasm v1.0.5-0.20260329114232-2491c387476c/go.mod h1:eewd1iQhpv/1qDXP83cfDk06Bpbhmt3EspN/0krcy70=
 github.com/ncruces/julianday v1.0.0 h1:fH0OKwa7NWvniGQtxdJRxAgkBMolni2BjDHaWTxqt7M=
 github.com/ncruces/julianday v1.0.0/go.mod h1:Dusn2KvZrrovOMJuOt0TNXL6tB7U2E8kvza5fFc9G7g=
+github.com/psanford/httpreadat v0.1.0 h1:VleW1HS2zO7/4c7c7zNl33fO6oYACSagjJIyMIwZLUE=
+github.com/psanford/httpreadat v0.1.0/go.mod h1:Zg7P+TlBm3bYbyHTKv/EdtSJZn3qwbPwpfZ/I9GKCRE=
 github.com/rogpeppe/go-internal v1.14.1 h1:UQB4HGPB6osV0SQTLymcB4TgvyWu6ZyliaW0tI/otEQ=
 github.com/rogpeppe/go-internal v1.14.1/go.mod h1:MaRKkUm5W0goXpeCfT7UZI6fk/L7L7so1lCWt35ZSgc=
-go.senan.xyz/sqlb v0.5.1 h1:vqeqKq/uudq15eGeT1f4+Dr0godbCdTRWC7qS0oy0U0=
-go.senan.xyz/sqlb v0.5.1/go.mod h1:XA78JignAlL79/cYZsWhxMpsZzfEdbbEpd+Nzrtyp2E=
+go.senan.xyz/sqlb v0.5.2 h1:tIx602S1uokP4yc8TbQ9BMlbeSg0X73ffGhoUfypu2I=
+go.senan.xyz/sqlb v0.5.2/go.mod h1:XA78JignAlL79/cYZsWhxMpsZzfEdbbEpd+Nzrtyp2E=
 golang.org/x/sys v0.42.0 h1:omrd2nAlyT5ESRdCLYdm3+fMfNFE/+Rf4bDIQImRJeo=
 golang.org/x/sys v0.42.0/go.mod h1:4GL1E5IUh+htKOUEOaiffhrAeqysfVGipDYzABqnCmw=
 golang.org/x/text v0.34.0 h1:oL/Qq0Kdaqxa1KbNeMKwQq0reLCCaFtqu2eNuSeNHbk=

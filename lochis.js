@@ -13,6 +13,8 @@ const html = htm.bind(React.createElement);
 /** @typedef {{ type: "FeatureCollection", features: object[] }} FeatureCollection */
 /** @typedef {{ id: number, name: string, colour: string }} Tag */
 /** @typedef {{ id: number, time: string, speed: number, altitude: number, latitude: number, longitude: number }} History */
+/** @typedef {{ name: string, latitude: number, longitude: number, country: string, population: number }} City */
+/** @typedef {{ history: History, city?: City}} Now */
 
 /** @type {FeatureCollection} */
 const EMPTY_FC = { type: "FeatureCollection", features: [] };
@@ -25,13 +27,11 @@ function App() {
       .then((/** @type {Tag[]} */ tags) => setTags(tags));
   }, []);
 
-  const [now, setNow] = useState(
-    /** @type {History | undefined} */ (undefined),
-  );
+  const [now, setNow] = useState(/** @type {Now | undefined} */ (undefined));
   useEffect(() => {
     fetch("/now")
       .then((r) => r.json())
-      .then((/** @type {History} */ now) => setNow(now));
+      .then((/** @type {Now} */ now) => setNow(now));
   }, []);
 
   /** @type {React.RefObject<AbortController | null>} */
@@ -85,7 +85,7 @@ function App() {
     });
 
   const nowIsRecent = now
-    ? Date.now() - new Date(now.time).getTime() < 20 * 60 * 1000
+    ? Date.now() - new Date(now.history.time).getTime() < 20 * 60 * 1000
     : false;
 
   const [blend, setBlend] = useState(0.25); // 0 = frequent, 1 = explore
@@ -142,7 +142,7 @@ function App() {
                 type: "Feature",
                 geometry: {
                   type: "Point",
-                  coordinates: [now.longitude, now.latitude],
+                  coordinates: [now.history.longitude, now.history.latitude],
                 },
               },
             ],
@@ -164,7 +164,14 @@ function App() {
         <//>
       `}
     <//>
-    ${now && html`<${LastSeen} time=${now.time} recent=${nowIsRecent} />`}
+    ${now &&
+    html`<${LastSeen}
+      time=${now.history.time}
+      speed=${now.history.speed}
+      altitude=${now.history.altitude}
+      city=${now.city}
+      recent=${nowIsRecent}
+    />`}
     <${LayerControls}
       blend=${blend}
       setBlend=${setBlend}
@@ -177,8 +184,8 @@ function App() {
   `;
 }
 
-/** @param {{ time: string, recent: boolean }} props */
-function LastSeen({ time, recent }) {
+/** @param {{ time: string, speed: number, altitude: number, city?: City, recent: boolean }} props */
+function LastSeen({ time, speed, altitude, city, recent }) {
   const [ago, setAgo] = useState("");
   useEffect(() => {
     const update = () => {
@@ -207,6 +214,9 @@ function LastSeen({ time, recent }) {
         </span>
       `}
       <span>Last seen ${ago}</span>
+      ${city && html`<span class="text-gray-500">near ${city.name}, ${city.country}</span>`}
+      ${speed > 0 && html`<span class="text-gray-500">${Math.round(speed * 3.6)} km/h</span>`}
+      ${altitude > 0 && html`<span class="text-gray-500">${Math.round(altitude)} m</span>`}
     </div>
   `;
 }

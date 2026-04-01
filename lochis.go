@@ -1,11 +1,13 @@
 package main
 
 import (
+	"bytes"
 	"context"
 	"database/sql"
 	"embed"
 	"encoding/csv"
 	"encoding/json"
+	"errors"
 	"flag"
 	"fmt"
 	"io"
@@ -19,6 +21,8 @@ import (
 	"time"
 
 	_ "github.com/ncruces/go-sqlite3/driver"
+	"github.com/ncruces/go-sqlite3/util/ioutil"
+	"github.com/ncruces/go-sqlite3/vfs/readervfs"
 	"go.senan.xyz/sqlb"
 	"golang.org/x/tools/txtar"
 )
@@ -59,6 +63,14 @@ func main() {
 		slog.ErrorContext(ctx, "migrate db", "err", err)
 		return
 	}
+
+	readervfs.Create("cities", ioutil.NewSizeReaderAt(bytes.NewReader(citiesDBEmbed)))
+	citiesDB, err := sql.Open("sqlite3", "file:cities?vfs=reader")
+	if err != nil {
+		slog.ErrorContext(ctx, "open cities db", "err", err)
+		return
+	}
+	defer citiesDB.Close()
 
 	mux := http.NewServeMux()
 
@@ -109,6 +121,7 @@ func main() {
 		}
 		if err := json.NewEncoder(w).Encode(tags); err != nil {
 			http.Error(w, "error sending json", http.StatusInternalServerError)
+			return
 		}
 	})
 
@@ -122,6 +135,7 @@ func main() {
 
 		if err := sqlb.Exec(r.Context(), db, "insert into history ?", sqlb.InsertSQL(h)); err != nil {
 			http.Error(w, err.Error(), http.StatusInternalServerError)
+			return
 		}
 	})
 
@@ -129,9 +143,36 @@ func main() {
 		var h History
 		if err := sqlb.QueryRow(r.Context(), db, &h, "select * from history where tag_id is null order by time desc limit 1"); err != nil {
 			http.Error(w, err.Error(), http.StatusInternalServerError)
+			return
 		}
-		if err := json.NewEncoder(w).Encode(h); err != nil {
+
+		const spread = 0.5
+
+		var city City
+		if err := sqlb.QueryRow(r.Context(), citiesDB, &city, `
+			select *
+			from cities
+			where latitude between ? and ? and longitude between ? and ?
+			order by (latitude-?)*(latitude-?) + (longitude-?)*(longitude-?) asc
+			limit 1`,
+			h.Latitude-spread, h.Latitude+spread, h.Longitude-spread, h.Longitude+spread,
+			h.Latitude, h.Latitude, h.Longitude, h.Longitude,
+		); err != nil && !errors.Is(err, sql.ErrNoRows) {
+			http.Error(w, err.Error(), http.StatusInternalServerError)
+			return
+		}
+
+		resp := struct {
+			History History `json:"history"`
+			City    City    `json:"city,omitzero"`
+		}{
+			History: h,
+			City:    city,
+		}
+
+		if err := json.NewEncoder(w).Encode(resp); err != nil {
 			http.Error(w, "error sending json", http.StatusInternalServerError)
+			return
 		}
 	})
 
@@ -180,7 +221,15 @@ type Properties struct {
 	TagID  int `json:"tag_id,omitempty"`
 }
 
-//go:generate go tool sqlbgen type History generated ID type Tag generated ID  -- lochis.gen.go
+//go:generate go tool sqlbgen type History generated ID type Tag generated ID type City -- lochis.gen.go
+
+type City struct {
+	Name       string  `json:"name"`
+	Latitude   float64 `json:"latitude"`
+	Longitude  float64 `json:"longitude"`
+	Country    string  `json:"country"`
+	Population int     `json:"population"`
+}
 
 type Tag struct {
 	ID     int    `json:"id"`
@@ -191,8 +240,8 @@ type Tag struct {
 type History struct {
 	ID        int           `json:"id"`
 	Time      time.Time     `json:"time"`
-	Speed     float64       `json:"speed"`
-	Altitude  float64       `json:"altitude"`
+	Speed     float64       `json:"speed"`    // m/s
+	Altitude  float64       `json:"altitude"` // m
 	Latitude  float64       `json:"latitude"`
 	Longitude float64       `json:"longitude"`
 	TagID     sql.NullInt64 `json:"tag_id"`
@@ -203,6 +252,9 @@ var schema []byte
 
 //go:embed index.html lochis.js
 var indexFS embed.FS
+
+//go:embed cities.db
+var citiesDBEmbed []byte
 
 func dbMigrate(ctx context.Context, db *sql.DB) error {
 	var nextVer int
