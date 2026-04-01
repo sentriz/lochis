@@ -12,25 +12,32 @@ const html = htm.bind(React.createElement);
 
 /** @typedef {{ type: "FeatureCollection", features: object[] }} FeatureCollection */
 /** @typedef {{ id: number, name: string, colour: string }} Tag */
+/** @typedef {{ id: number, time: string, speed: number, altitude: number, latitude: number, longitude: number }} History */
 
 /** @type {FeatureCollection} */
 const EMPTY_FC = { type: "FeatureCollection", features: [] };
 
 function App() {
-  const [geojson, setGeojson] = useState(EMPTY_FC);
   const [tags, setTags] = useState(/** @type {Tag[]} */ ([]));
-  const [blend, setBlend] = useState(0); // 0 = frequent, 1 = explore
-  const [historyVisible, setHistoryVisible] = useState(true);
-  const [hiddenTags, setHiddenTags] = useState(/** @type {Set<number>} */ (new Set()));
-  /** @type {React.RefObject<AbortController | null>} */
-  const controllerRef = useRef(null);
-
   useEffect(() => {
     fetch("/tags")
       .then((r) => r.json())
       .then((/** @type {Tag[]} */ tags) => setTags(tags));
   }, []);
 
+  const [now, setNow] = useState(
+    /** @type {History | undefined} */ (undefined),
+  );
+  useEffect(() => {
+    fetch("/now")
+      .then((r) => r.json())
+      .then((/** @type {History} */ now) => setNow(now));
+  }, []);
+
+  /** @type {React.RefObject<AbortController | null>} */
+  const controllerRef = useRef(null);
+
+  const [geojson, setGeojson] = useState(EMPTY_FC);
   const loadData = (/** @type {MapLibreMap} */ map) => {
     if (controllerRef.current) controllerRef.current.abort();
     controllerRef.current = new AbortController();
@@ -66,6 +73,9 @@ function App() {
 
   const onLoad = (/** @type {MapLibreEvent} */ e) => loadData(e.target);
 
+  const [hiddenTags, setHiddenTags] = useState(
+    /** @type {Set<number>} */ (new Set()),
+  );
   const toggleTag = (/** @type {number} */ id) =>
     setHiddenTags((prev) => {
       const next = new Set(prev);
@@ -73,6 +83,13 @@ function App() {
       else next.add(id);
       return next;
     });
+
+  const nowIsRecent = now
+    ? Date.now() - new Date(now.time).getTime() < 20 * 60 * 1000
+    : false;
+
+  const [blend, setBlend] = useState(0.25); // 0 = frequent, 1 = explore
+  const [historyVisible, setHistoryVisible] = useState(true);
 
   return html`
     <${Map}
@@ -98,18 +115,56 @@ function App() {
           layout=${{ visibility: historyVisible ? "visible" : "none" }}
           paint=${explorePaint(blend)}
         />
-        ${tags.map((t) => html`
+        ${tags.map(
+          (t) => html`
             <${Layer}
               key=${`tag-${t.id}`}
               id=${`tag-${t.id}`}
               type="circle"
               filter=${["==", ["get", "tag_id"], t.id]}
-              layout=${{ visibility: hiddenTags.has(t.id) ? "none" : "visible" }}
+              layout=${{
+                visibility: hiddenTags.has(t.id) ? "none" : "visible",
+              }}
               paint=${taggedPaint(t.colour)}
             />
-          `)}
+          `,
+        )}
       <//>
+      ${now &&
+      html`
+        <${Source}
+          id="now"
+          type="geojson"
+          data=${{
+            type: "FeatureCollection",
+            features: [
+              {
+                type: "Feature",
+                geometry: {
+                  type: "Point",
+                  coordinates: [now.longitude, now.latitude],
+                },
+              },
+            ],
+          }}
+        >
+          <${Layer}
+            id="now"
+            type="circle"
+            layout=${{ visibility: nowIsRecent ? "visible" : "none" }}
+            paint=${{
+              "circle-radius": 8,
+              "circle-color": "#3b82f6",
+              "circle-opacity": 0.9,
+              "circle-stroke-color": "white",
+              "circle-stroke-width": 2,
+              "circle-stroke-opacity": 1,
+            }}
+          />
+        <//>
+      `}
     <//>
+    ${now && html`<${LastSeen} time=${now.time} recent=${nowIsRecent} />`}
     <${LayerControls}
       blend=${blend}
       setBlend=${setBlend}
@@ -119,6 +174,40 @@ function App() {
       hiddenTags=${hiddenTags}
       toggleTag=${toggleTag}
     />
+  `;
+}
+
+/** @param {{ time: string, recent: boolean }} props */
+function LastSeen({ time, recent }) {
+  const [ago, setAgo] = useState("");
+  useEffect(() => {
+    const update = () => {
+      const diff = Math.floor((Date.now() - new Date(time).getTime()) / 1000);
+      if (diff < 60) setAgo("just now");
+      else if (diff < 3600) setAgo(`${Math.floor(diff / 60)}m ago`);
+      else if (diff < 86400) setAgo(`${Math.floor(diff / 3600)}h ago`);
+      else setAgo(`${Math.floor(diff / 86400)}d ago`);
+    };
+    update();
+    const id = setInterval(update, 30_000);
+    return () => clearInterval(id);
+  }, [time]);
+
+  return html`
+    <div
+      class="absolute top-4 left-1/2 -translate-x-1/2 z-10 bg-white/90 rounded-lg shadow px-3 py-1.5 text-xs font-sans select-none flex items-center gap-2"
+    >
+      ${recent &&
+      html`
+        <span class="relative flex size-2.5">
+          <span
+            class="animate-ping absolute inline-flex size-full rounded-full bg-red-400 opacity-75"
+          />
+          <span class="relative inline-flex size-2.5 rounded-full bg-red-500" />
+        </span>
+      `}
+      <span>Last seen ${ago}</span>
+    </div>
   `;
 }
 

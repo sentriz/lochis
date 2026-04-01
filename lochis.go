@@ -49,7 +49,7 @@ func main() {
 	defer db.Close()
 
 	ctx := context.Background()
-	if lev := slog.LevelDebug; slog.Default().Enabled(context.Background(), lev) {
+	if lev := slog.LevelInfo; slog.Default().Enabled(context.Background(), lev) {
 		ctx = sqlb.WithLogFunc(ctx, func(ctx context.Context, typ string, query string, duration time.Duration) {
 			slog.Log(ctx, lev, typ, "took", duration, "query", query)
 		})
@@ -104,11 +104,35 @@ func main() {
 	mux.HandleFunc("GET /tags", func(w http.ResponseWriter, r *http.Request) {
 		var tags []Tag
 		if err := sqlb.QueryRows(r.Context(), db, sqlb.Append(&tags), "select * from tags"); err != nil {
-			slog.ErrorContext(ctx, "scan tags", "err", err)
 			http.Error(w, "error reading tags", http.StatusInternalServerError)
 			return
 		}
-		json.NewEncoder(w).Encode(tags)
+		if err := json.NewEncoder(w).Encode(tags); err != nil {
+			http.Error(w, "error sending json", http.StatusInternalServerError)
+		}
+	})
+
+	mux.HandleFunc("POST /now", func(w http.ResponseWriter, r *http.Request) {
+		var h History
+		h.Latitude, _ = strconv.ParseFloat(r.FormValue("lat"), 64)
+		h.Longitude, _ = strconv.ParseFloat(r.FormValue("lng"), 64)
+		h.Time, _ = time.Parse(time.RFC3339Nano, r.FormValue("time"))
+		h.Speed, _ = strconv.ParseFloat(r.FormValue("speed"), 64)
+		h.Altitude, _ = strconv.ParseFloat(r.FormValue("alt"), 64)
+
+		if err := sqlb.Exec(r.Context(), db, "insert into history ?", sqlb.InsertSQL(h)); err != nil {
+			http.Error(w, err.Error(), http.StatusInternalServerError)
+		}
+	})
+
+	mux.HandleFunc("GET /now", func(w http.ResponseWriter, r *http.Request) {
+		var h History
+		if err := sqlb.QueryRow(r.Context(), db, &h, "select * from history where tag_id is null order by time desc limit 1"); err != nil {
+			http.Error(w, err.Error(), http.StatusInternalServerError)
+		}
+		if err := json.NewEncoder(w).Encode(h); err != nil {
+			http.Error(w, "error sending json", http.StatusInternalServerError)
+		}
 	})
 
 	mux.HandleFunc("POST /import", func(w http.ResponseWriter, r *http.Request) {
@@ -165,13 +189,13 @@ type Tag struct {
 }
 
 type History struct {
-	ID        int
-	Time      time.Time
-	Speed     float64
-	Altitude  float64
-	Latitude  float64
-	Longitude float64
-	TagID     sql.NullInt64
+	ID        int           `json:"id"`
+	Time      time.Time     `json:"time"`
+	Speed     float64       `json:"speed"`
+	Altitude  float64       `json:"altitude"`
+	Latitude  float64       `json:"latitude"`
+	Longitude float64       `json:"longitude"`
+	TagID     sql.NullInt64 `json:"tag_id"`
 }
 
 //go:embed schema.sql
