@@ -16,22 +16,12 @@ const html = htm.bind(React.createElement);
 /** @type {FeatureCollection} */
 const EMPTY_FC = { type: "FeatureCollection", features: [] };
 
-/** @typedef {{ visible: boolean, opacity: number, label: string, colour: string | null }} LayerState */
-
 function App() {
   const [geojson, setGeojson] = useState(EMPTY_FC);
   const [tags, setTags] = useState(/** @type {Tag[]} */ ([]));
-  const [layers, setLayers] = useState(
-    /** @type {Record<string, LayerState>} */ ({
-      frequent: {
-        visible: true,
-        opacity: 0.9,
-        label: "Frequent",
-        colour: null,
-      },
-      explore: { visible: false, opacity: 0.7, label: "Explore", colour: null },
-    }),
-  );
+  const [blend, setBlend] = useState(0); // 0 = frequent, 1 = explore
+  const [historyVisible, setHistoryVisible] = useState(true);
+  const [hiddenTags, setHiddenTags] = useState(/** @type {Set<number>} */ (new Set()));
   /** @type {React.RefObject<AbortController | null>} */
   const controllerRef = useRef(null);
 
@@ -40,21 +30,6 @@ function App() {
       .then((r) => r.json())
       .then((/** @type {Tag[]} */ tags) => setTags(tags));
   }, []);
-
-  useEffect(() => {
-    setLayers((prev) => {
-      const next = { ...prev };
-      for (const t of tags) {
-        next[`tag-${t.id}`] = {
-          visible: true,
-          opacity: 0.9,
-          label: t.name,
-          colour: t.colour,
-        };
-      }
-      return next;
-    });
-  }, [tags]);
 
   const loadData = (/** @type {MapLibreMap} */ map) => {
     if (controllerRef.current) controllerRef.current.abort();
@@ -91,10 +66,13 @@ function App() {
 
   const onLoad = (/** @type {MapLibreEvent} */ e) => loadData(e.target);
 
-  const updateLayer = (
-    /** @type {string} */ id,
-    /** @type {Partial<LayerState>} */ patch,
-  ) => setLayers((prev) => ({ ...prev, [id]: { ...prev[id], ...patch } }));
+  const toggleTag = (/** @type {number} */ id) =>
+    setHiddenTags((prev) => {
+      const next = new Set(prev);
+      if (next.has(id)) next.delete(id);
+      else next.add(id);
+      return next;
+    });
 
   return html`
     <${Map}
@@ -110,103 +88,91 @@ function App() {
           id="frequent"
           type="heatmap"
           filter=${["!", ["has", "tag_id"]]}
-          paint=${{
-            ...FREQUENT_PAINT,
-            "heatmap-opacity": layers.frequent.visible
-              ? [
-                  "interpolate",
-                  ["linear"],
-                  ["zoom"],
-                  0,
-                  BASE_OPACITY[0] * layers.frequent.opacity,
-                  14,
-                  BASE_OPACITY[1] * layers.frequent.opacity,
-                  18,
-                  BASE_OPACITY[2] * layers.frequent.opacity,
-                ]
-              : 0,
-          }}
+          layout=${{ visibility: historyVisible ? "visible" : "none" }}
+          paint=${frequentPaint(blend)}
         />
         <${Layer}
           id="explore"
           type="circle"
           filter=${["!", ["has", "tag_id"]]}
-          paint=${{
-            ...EXPLORE_PAINT,
-            "circle-opacity": layers.explore.visible
-              ? layers.explore.opacity
-              : 0,
-          }}
+          layout=${{ visibility: historyVisible ? "visible" : "none" }}
+          paint=${explorePaint(blend)}
         />
-        ${tags.map((t) => {
-          const l = layers[`tag-${t.id}`];
-          if (!l) return null;
-          return html`
+        ${tags.map((t) => html`
             <${Layer}
               key=${`tag-${t.id}`}
               id=${`tag-${t.id}`}
               type="circle"
               filter=${["==", ["get", "tag_id"], t.id]}
-              paint=${{
-                "circle-color": t.colour,
-                "circle-radius": [
-                  "interpolate",
-                  ["linear"],
-                  ["zoom"],
-                  0,
-                  5,
-                  10,
-                  9,
-                  16,
-                  14,
-                ],
-                "circle-opacity": l.visible ? l.opacity : 0,
-                "circle-stroke-color": t.colour,
-                "circle-stroke-width": 1,
-                "circle-stroke-opacity": l.visible ? l.opacity * 0.5 : 0,
-              }}
+              layout=${{ visibility: hiddenTags.has(t.id) ? "none" : "visible" }}
+              paint=${taggedPaint(t.colour)}
             />
-          `;
-        })}
+          `)}
       <//>
     <//>
-    <${LayerControls} layers=${layers} updateLayer=${updateLayer} />
+    <${LayerControls}
+      blend=${blend}
+      setBlend=${setBlend}
+      historyVisible=${historyVisible}
+      setHistoryVisible=${setHistoryVisible}
+      tags=${tags}
+      hiddenTags=${hiddenTags}
+      toggleTag=${toggleTag}
+    />
   `;
 }
 
 /**
- * @param {{ layers: Record<string, LayerState>, updateLayer: (id: string, patch: Partial<LayerState>) => void }} props
+ * @param {{ blend: number, setBlend: (v: number) => void, historyVisible: boolean, setHistoryVisible: (v: boolean) => void, tags: Tag[], hiddenTags: Set<number>, toggleTag: (id: number) => void }} props
  */
-function LayerControls({ layers, updateLayer }) {
+function LayerControls({
+  blend,
+  setBlend,
+  historyVisible,
+  setHistoryVisible,
+  tags,
+  hiddenTags,
+  toggleTag,
+}) {
   return html`
     <div
-      class="absolute bottom-4 left-4 z-10 bg-white/90 rounded-lg shadow px-3 py-2 text-xs font-sans select-none min-w-40"
+      class="absolute top-4 right-4 z-10 bg-white/90 rounded-lg shadow px-3 py-2 text-xs font-sans select-none min-w-40"
     >
-      ${Object.entries(layers).map(
-        ([id, l]) => html`
-          <div key=${id} class="flex items-center gap-2 py-1">
+      <div class="flex items-center gap-2 py-1">
+        <input
+          type="checkbox"
+          checked=${historyVisible}
+          onChange=${() => setHistoryVisible(!historyVisible)}
+        />
+        <span class="text-xs">Frequent</span>
+        <input
+          class="flex-1"
+          type="range"
+          min="0"
+          max="1"
+          step="0.05"
+          value=${blend}
+          disabled=${!historyVisible}
+          onInput=${(/** @type {Event & { target: HTMLInputElement }} */ e) =>
+            setBlend(parseFloat(e.target.value))}
+        />
+        <span class="text-xs">Explore</span>
+      </div>
+      ${tags.length > 0 && html`<hr class="my-1 border-gray-300" />`}
+      ${tags.map(
+        (t) => html`
+          <div key=${t.id} class="flex items-center gap-2 py-1">
             <input
               type="checkbox"
-              checked=${l.visible}
-              onChange=${() => updateLayer(id, { visible: !l.visible })}
+              checked=${!hiddenTags.has(t.id)}
+              onChange=${() => toggleTag(t.id)}
             />
-            ${l.colour &&
+            ${t.colour &&
             html`<span
-              class="inline-block size-2.5 rounded-full"
-              style=${{ backgroundColor: l.colour }}
+              class="shrink-0 size-2.5 rounded-full"
+              style=${{ backgroundColor: t.colour }}
             />`}
-            <span class="flex-1">${l.label}</span>
-            <input
-              class="w-16"
-              type="range"
-              min="0"
-              max="1"
-              step="0.05"
-              value=${l.opacity}
-              onInput=${(
-                /** @type {Event & { target: HTMLInputElement }} */ e,
-              ) => updateLayer(id, { opacity: parseFloat(e.target.value) })}
-            />
+            <span class="text-xs">${t.name}</span>
           </div>
         `,
       )}
@@ -215,6 +181,8 @@ function LayerControls({ layers, updateLayer }) {
 }
 
 ReactDOM.createRoot(document.body).render(html`<${App} />`);
+
+const BASE_OPACITY = [0.9, 0.7, 0.5];
 
 const HEATMAP_COLOR = [
   "interpolate",
@@ -234,7 +202,18 @@ const HEATMAP_COLOR = [
   "rgba(255, 0, 0, 1)",
 ];
 
-const FREQUENT_PAINT = {
+const frequentPaint = (/** @type {number} */ blend) => ({
+  "heatmap-opacity": [
+    "interpolate",
+    ["linear"],
+    ["zoom"],
+    0,
+    BASE_OPACITY[0] * (1 - blend),
+    14,
+    BASE_OPACITY[1] * (1 - blend),
+    18,
+    BASE_OPACITY[2] * (1 - blend),
+  ],
   "heatmap-weight": [
     "interpolate",
     ["exponential", 0.5],
@@ -287,9 +266,10 @@ const FREQUENT_PAINT = {
     18,
     10,
   ],
-};
+});
 
-const EXPLORE_PAINT = {
+const explorePaint = (/** @type {number} */ blend) => ({
+  "circle-opacity": blend,
   "circle-color": [
     "interpolate",
     ["exponential", 0.5],
@@ -367,6 +347,14 @@ const EXPLORE_PAINT = {
     ],
   ],
   "circle-blur": 0.4,
-};
+});
 
-const BASE_OPACITY = [0.9, 0.7, 0.5];
+const taggedPaint = (/** @type {string} */ colour) => ({
+  "circle-color": colour,
+  "circle-radius": ["interpolate", ["linear"], ["zoom"], 0, 3, 10, 6, 16, 9],
+  "circle-opacity": 0.9,
+  "circle-blur": 0.1,
+  "circle-stroke-color": "white",
+  "circle-stroke-width": 1.5,
+  "circle-stroke-opacity": 0.9,
+});
