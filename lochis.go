@@ -74,7 +74,7 @@ func main() {
 
 	mux := http.NewServeMux()
 
-	mux.HandleFunc("GET /history", func(w http.ResponseWriter, r *http.Request) {
+	mux.HandleFunc("GET /geojson/history", func(w http.ResponseWriter, r *http.Request) {
 		params := r.URL.Query()
 
 		south, _ := strconv.ParseFloat(params.Get("south"), 64)

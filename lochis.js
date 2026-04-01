@@ -52,7 +52,7 @@ function App() {
       zoom: String(zoom),
     });
 
-    fetch(`/history?${params}`, {
+    fetch(`/geojson/history?${params}`, {
       signal: controllerRef.current.signal,
     })
       .then((r) => r.text())
@@ -214,9 +214,14 @@ function LastSeen({ time, speed, altitude, city, recent }) {
         </span>
       `}
       <span>Last seen ${ago}</span>
-      ${city && html`<span class="text-gray-500">near ${city.name}, ${city.country}</span>`}
-      ${speed > 0 && html`<span class="text-gray-500">${Math.round(speed * 3.6)} km/h</span>`}
-      ${altitude > 0 && html`<span class="text-gray-500">${Math.round(altitude)} m</span>`}
+      ${city &&
+      html`<span class="text-gray-500"
+        >near ${city.name}, ${city.country}</span
+      >`}
+      ${speed > 0 &&
+      html`<span class="text-gray-500">${Math.round(speed * 3.6)} km/h</span>`}
+      ${altitude > 0 &&
+      html`<span class="text-gray-500">${Math.round(altitude)} m</span>`}
     </div>
   `;
 }
