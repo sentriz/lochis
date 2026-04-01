@@ -4,6 +4,7 @@ go 1.26.0
 
 require (
 	github.com/ncruces/go-sqlite3 v0.33.2
+	go.senan.xyz/flagconf v0.1.11
 	go.senan.xyz/sqlb v0.5.2
 	golang.org/x/tools v0.43.0
 )

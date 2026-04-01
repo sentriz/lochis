@@ -3,6 +3,7 @@ package main
 import (
 	"bytes"
 	"context"
+	"crypto/subtle"
 	"database/sql"
 	"embed"
 	"encoding/csv"
@@ -23,23 +24,30 @@ import (
 	_ "github.com/ncruces/go-sqlite3/driver"
 	"github.com/ncruces/go-sqlite3/util/ioutil"
 	"github.com/ncruces/go-sqlite3/vfs/readervfs"
+	"go.senan.xyz/flagconf"
 	"go.senan.xyz/sqlb"
 	"golang.org/x/tools/txtar"
 )
 
 func main() {
 	var (
-		listenAddr = flag.String("listen-addr", "", "listen addr for web interface")
-		dbPath     = flag.String("db-path", "lochis.db", "db path for web interface")
+		listenAddr = flag.String("listen-addr", "", "listen addr")
+		dbPath     = flag.String("db-path", "lochis.db", "DB path")
+		apiKey     = flag.String("api-key", "", "API key")
 	)
 	flag.Parse()
+	flagconf.ParseEnv()
 
-	if *dbPath == "" {
-		slog.Error("need a db path")
-		return
-	}
 	if *listenAddr == "" {
 		slog.Error("need a listen addr")
+		return
+	}
+	if *dbPath == "" {
+		slog.Error("need a DB path")
+		return
+	}
+	if *apiKey == "" {
+		slog.Error("need an API key")
 		return
 	}
 
@@ -186,9 +194,13 @@ func main() {
 
 	mux.Handle("GET /", http.FileServer(http.FS(indexFS)))
 
+	var handler http.Handler = mux
+	handler = authMiddleware(handler, *apiKey)
+	handler = logMiddleware(handler)
+
 	server := &http.Server{
 		Addr:        *listenAddr,
-		Handler:     mux,
+		Handler:     handler,
 		BaseContext: func(l net.Listener) context.Context { return ctx },
 	}
 
@@ -322,4 +334,29 @@ func importData(ctx context.Context, db *sql.DB, src io.Reader) error {
 	}
 
 	return nil
+}
+
+const cookieKey = "api-key"
+
+func authMiddleware(next http.Handler, apiKey string) http.Handler {
+	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		// exchange a valid basic auth request for a cookie that lasts 30 days
+		if cookie, _ := r.Cookie(cookieKey); cookie != nil && subtle.ConstantTimeCompare([]byte(cookie.Value), []byte(apiKey)) == 1 {
+			next.ServeHTTP(w, r)
+			return
+		}
+		if _, key, _ := r.BasicAuth(); subtle.ConstantTimeCompare([]byte(key), []byte(apiKey)) == 1 {
+			http.SetCookie(w, &http.Cookie{Name: cookieKey, Value: apiKey, HttpOnly: true, Secure: true, SameSite: http.SameSiteLaxMode, Expires: time.Now().Add(30 * 24 * time.Hour)})
+			next.ServeHTTP(w, r)
+			return
+		}
+		w.Header().Set("WWW-Authenticate", `Basic realm="restricted", charset="UTF-8"`)
+		http.Error(w, "unauthorised", http.StatusUnauthorized)
+	})
+}
+func logMiddleware(next http.Handler) http.Handler {
+	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		slog.InfoContext(r.Context(), "request", "url", r.URL)
+		next.ServeHTTP(w, r)
+	})
 }

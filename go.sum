@@ -8,6 +8,8 @@ github.com/psanford/httpreadat v0.1.0 h1:VleW1HS2zO7/4c7c7zNl33fO6oYACSagjJIyMIw
 github.com/psanford/httpreadat v0.1.0/go.mod h1:Zg7P+TlBm3bYbyHTKv/EdtSJZn3qwbPwpfZ/I9GKCRE=
 github.com/rogpeppe/go-internal v1.14.1 h1:UQB4HGPB6osV0SQTLymcB4TgvyWu6ZyliaW0tI/otEQ=
 github.com/rogpeppe/go-internal v1.14.1/go.mod h1:MaRKkUm5W0goXpeCfT7UZI6fk/L7L7so1lCWt35ZSgc=
+go.senan.xyz/flagconf v0.1.11 h1:ApA9DpoSrfVQlLt8spKJC3fOT7oTEZ2/MmBGMnb9mt4=
+go.senan.xyz/flagconf v0.1.11/go.mod h1:NqOFfSwJvNWXOTUabcRZ8mPK9+sJmhStJhqtEt74wNQ=
 go.senan.xyz/sqlb v0.5.2 h1:tIx602S1uokP4yc8TbQ9BMlbeSg0X73ffGhoUfypu2I=
 go.senan.xyz/sqlb v0.5.2/go.mod h1:XA78JignAlL79/cYZsWhxMpsZzfEdbbEpd+Nzrtyp2E=
 golang.org/x/sys v0.42.0 h1:omrd2nAlyT5ESRdCLYdm3+fMfNFE/+Rf4bDIQImRJeo=
