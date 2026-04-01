@@ -98,7 +98,7 @@ function App() {
       onMoveEnd=${onMoveEnd}
       onLoad=${onLoad}
       class="size-full"
-      mapStyle="https://api.maptiler.com/maps/basic/style.json?key=get_your_own_OpIi9ZULNHzrESv6T2vL"
+      mapStyle="https://api.maptiler.com/maps/basic/style.json?key=Bv2vxexRBtcQcOED6oyr"
     >
       <${Source} id="history" type="geojson" data=${geojson}>
         <${Layer}
