@@ -19,7 +19,6 @@ import (
 	"time"
 
 	_ "github.com/ncruces/go-sqlite3/driver"
-	_ "github.com/ncruces/go-sqlite3/embed"
 	"go.senan.xyz/sqlb"
 	"golang.org/x/tools/txtar"
 )
@@ -93,7 +92,7 @@ func main() {
 		f.Geometry.Type = "Point"
 
 		enc := json.NewEncoder(w)
-		for err := range sqlb.RowsScan(r.Context(), db, sqlb.Values(&f.Geometry.Coordinates[1], &f.Geometry.Coordinates[0], &f.Geometry.Coordinates[2], &f.Properties.Weight, &f.Properties.TagID), "?", q) {
+		for err := range sqlb.Each(r.Context(), db, sqlb.Into(&f.Geometry.Coordinates[1], &f.Geometry.Coordinates[0], &f.Geometry.Coordinates[2], &f.Properties.Weight, &f.Properties.TagID), "?", q) {
 			if err != nil {
 				slog.ErrorContext(ctx, "scan grouped history", "err", err)
 				continue
@@ -104,7 +103,7 @@ func main() {
 
 	mux.HandleFunc("GET /tags", func(w http.ResponseWriter, r *http.Request) {
 		var tags []Tag
-		if err := sqlb.ScanRows(r.Context(), db, sqlb.Append(&tags), "select * from tags"); err != nil {
+		if err := sqlb.QueryRows(r.Context(), db, sqlb.Append(&tags), "select * from tags"); err != nil {
 			slog.ErrorContext(ctx, "scan tags", "err", err)
 			http.Error(w, "error reading tags", http.StatusInternalServerError)
 			return
@@ -157,14 +156,14 @@ type Properties struct {
 	TagID  int `json:"tag_id,omitempty"`
 }
 
-//go:generate go tool sqlbgen -to lochis_tag.gen.go -generated ID Tag
+//go:generate go tool sqlbgen type History generated ID type Tag generated ID  -- lochis.gen.go
+
 type Tag struct {
 	ID     int    `json:"id"`
 	Name   string `json:"name"`
 	Colour string `json:"colour"`
 }
 
-//go:generate go tool sqlbgen -to lochis.gen.go -generated ID History
 type History struct {
 	ID        int
 	Time      time.Time
@@ -183,7 +182,7 @@ var indexFS embed.FS
 
 func dbMigrate(ctx context.Context, db *sql.DB) error {
 	var nextVer int
-	if err := sqlb.ScanRow(ctx, db, sqlb.Values(&nextVer), "pragma user_version"); err != nil {
+	if err := sqlb.QueryRow(ctx, db, sqlb.Into(&nextVer), "pragma user_version"); err != nil {
 		return fmt.Errorf("get schema version: %w", err)
 	}
 
@@ -204,7 +203,7 @@ func dbMigrate(ctx context.Context, db *sql.DB) error {
 
 func importData(ctx context.Context, db *sql.DB, src io.Reader) error {
 	var tagIDs = map[string]int{}
-	if err := sqlb.ScanRows(ctx, db, sqlb.MapValue(tagIDs), "select name, id from tags"); err != nil {
+	if err := sqlb.QueryRows(ctx, db, sqlb.ValueMap(tagIDs), "select name, id from tags"); err != nil {
 		return err
 	}
 
