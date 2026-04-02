@@ -240,7 +240,7 @@ function LayerControls({
 }) {
   return html`
     <div
-      class="absolute bottom-4 right-4 z-10 bg-white/90 rounded-lg shadow px-3 py-2 text-xs font-sans select-none min-w-40"
+      class="absolute bottom-4 left-4 z-10 bg-white/90 rounded-lg shadow px-3 py-2 text-xs font-sans select-none min-w-40"
     >
       <div class="flex items-center gap-2 py-1">
         <input
