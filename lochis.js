@@ -202,7 +202,7 @@ function LastSeen({ time, speed, altitude, city, recent }) {
 
   return html`
     <div
-      class="absolute top-4 left-1/2 -translate-x-1/2 z-10 bg-white/90 rounded-lg shadow px-3 py-1.5 text-xs font-sans select-none flex items-center gap-2"
+      class="absolute top-4 left-1/2 -translate-x-1/2 z-10 bg-white/90 rounded-lg shadow px-3 py-1.5 text-xs font-sans select-none whitespace-nowrap flex items-center gap-1.5"
     >
       ${recent &&
       html`
@@ -213,15 +213,7 @@ function LastSeen({ time, speed, altitude, city, recent }) {
           <span class="relative inline-flex size-2.5 rounded-full bg-red-500" />
         </span>
       `}
-      <span>Last seen ${ago}</span>
-      ${city &&
-      html`<span class="text-gray-500"
-        >near ${city.name}, ${city.country}</span
-      >`}
-      ${speed > 0 &&
-      html`<span class="text-gray-500">${Math.round(speed * 3.6)} km/h</span>`}
-      ${altitude > 0 &&
-      html`<span class="text-gray-500">${Math.round(altitude)} m</span>`}
+      <span>${ago}${city ? ` · ${city.name}, ${city.country}` : ""}${speed > 0 ? ` · ${Math.round(speed * 3.6)} km/h` : ""}${altitude > 0 ? ` · ${Math.round(altitude)} m` : ""}</span>
     </div>
   `;
 }
