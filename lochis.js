@@ -161,7 +161,7 @@ function App() {
               "circle-radius": 8,
               "circle-color": "#3b82f6",
               "circle-opacity": 0.9,
-              "circle-stroke-color": "white",
+              "circle-stroke-color": "#ffffff",
               "circle-stroke-width": 2,
               "circle-stroke-opacity": 1,
             }}
@@ -298,24 +298,24 @@ const frequentPaint = (/** @type {number} */ blend) => ({
   "heatmap-radius": ["interpolate", ["linear"], ["zoom"], 0, 12, 5, 28, 10, 30, 14, 25, 16, 15, 18, 10],
   "heatmap-color": [
     "interpolate", ["linear"], ["heatmap-density"],
-    0, "rgba(0, 0, 255, 0)",
-    0.1, "rgba(0, 100, 255, 0.3)",
-    0.3, "rgba(0, 128, 255, 0.5)",
-    0.5, "rgba(0, 255, 128, 0.6)",
-    0.7, "rgba(255, 255, 0, 0.8)",
-    1, "rgba(255, 0, 0, 1)",
+    0, "rgba(29, 78, 216, 0)",        // blue-700
+    0.1, "rgba(37, 99, 235, 0.3)",    // blue-600
+    0.3, "rgba(59, 130, 246, 0.5)",   // blue-500
+    0.5, "rgba(52, 211, 153, 0.6)",   // emerald-400
+    0.7, "rgba(250, 204, 21, 0.8)",   // yellow-400
+    1, "#ef4444",                      // red-500
   ],
 });
 
 // prettier-ignore
 const explorePaint = (/** @type {number} */ blend) => ({
   "circle-opacity": blend,
-  "circle-color": ["interpolate", ["exponential", 0.5], ["get", "weight"], 1, "rgba(0,80,255,0.1)", 10, "rgba(255,30,0,0.8)", 50, "rgba(255,160,0,0.7)", 200, "rgba(0,180,255,0.4)", 1000, "rgba(0,80,255,0.25)", 10000, "rgba(0,40,255,0.1)"],
+  "circle-color": ["interpolate", ["exponential", 0.5], ["get", "weight"], 1, "rgba(37, 99, 235, 0.3)", 10, "rgba(220, 38, 38, 0.8)", 50, "rgba(245, 158, 11, 0.7)", 200, "rgba(56, 189, 248, 0.4)", 1000, "rgba(37, 99, 235, 0.25)", 10000, "rgba(29, 78, 216, 0.1)"],
   "circle-radius": [
     "interpolate", ["linear"], ["zoom"],
-    0, ["interpolate", ["exponential", 0.5], ["get", "weight"], 1, 1, 10, 4, 50, 3, 200, 2, 1000, 1.5, 10000, 1],
-    10, ["interpolate", ["exponential", 0.5], ["get", "weight"], 1, 2, 10, 8, 50, 6, 200, 4, 1000, 3, 10000, 2],
-    16, ["interpolate", ["exponential", 0.5], ["get", "weight"], 1, 3, 10, 12, 50, 9, 200, 6, 1000, 4, 10000, 3],
+    0, ["interpolate", ["exponential", 0.5], ["get", "weight"], 1, 2, 10, 4, 50, 3, 200, 2, 1000, 1.5, 10000, 1],
+    10, ["interpolate", ["exponential", 0.5], ["get", "weight"], 1, 3.5, 10, 8, 50, 6, 200, 4, 1000, 3, 10000, 2],
+    16, ["interpolate", ["exponential", 0.5], ["get", "weight"], 1, 5, 10, 12, 50, 9, 200, 6, 1000, 4, 10000, 3],
   ],
   "circle-blur": 0.4,
 });
@@ -326,7 +326,7 @@ const taggedPaint = (/** @type {string} */ colour) => ({
   "circle-radius": ["interpolate", ["linear"], ["zoom"], 0, 3, 10, 6, 16, 9],
   "circle-opacity": 0.9,
   "circle-blur": 0.1,
-  "circle-stroke-color": "white",
+  "circle-stroke-color": "#ffffff",
   "circle-stroke-width": 1.5,
   "circle-stroke-opacity": 0.9,
 });
