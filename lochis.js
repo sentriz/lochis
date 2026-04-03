@@ -22,23 +22,29 @@ const EMPTY_FC = { type: "FeatureCollection", features: [] };
 function App() {
   const [tags, setTags] = useState(/** @type {Tag[]} */ ([]));
   useEffect(() => {
-    fetch("/tags")
-      .then((r) => r.json())
-      .then((/** @type {Tag[]} */ tags) => setTags(tags));
+    (async () => {
+      /** @type {Tag[]} */
+      const tags = await (await fetch("/tags")).json();
+      setTags(tags);
+    })();
   }, []);
 
   const [now, setNow] = useState(/** @type {Now | undefined} */ (undefined));
   useEffect(() => {
-    fetch("/now")
-      .then((r) => r.json())
-      .then((/** @type {Now} */ now) => setNow(now));
+    (async () => {
+      const resp = await fetch("/now");
+      if (!resp.ok) return;
+      /** @type {Now} */
+      const now = await resp.json();
+      setNow(now);
+    })();
   }, []);
 
   /** @type {React.RefObject<AbortController | null>} */
   const controllerRef = useRef(null);
 
   const [geojson, setGeojson] = useState(EMPTY_FC);
-  const loadData = (/** @type {MapLibreMap} */ map) => {
+  const loadData = async (/** @type {MapLibreMap} */ map) => {
     if (controllerRef.current) controllerRef.current.abort();
     controllerRef.current = new AbortController();
 
@@ -52,20 +58,19 @@ function App() {
       zoom: String(zoom),
     });
 
-    fetch(`/geojson/history?${params}`, {
-      signal: controllerRef.current.signal,
-    })
-      .then((r) => r.text())
-      .then((text) => {
-        const trimmed = text.trim();
-        const features = trimmed
-          ? JSON.parse("[" + trimmed.replaceAll("\n", ",") + "]")
-          : [];
-        setGeojson({ type: "FeatureCollection", features });
-      })
-      .catch((e) => {
-        if (e.name !== "AbortError") throw e;
+    try {
+      const resp = await fetch(`/geojson/history?${params}`, {
+        signal: controllerRef.current.signal,
       });
+      const text = await resp.text();
+      const trimmed = text.trim();
+      const features = trimmed
+        ? JSON.parse("[" + trimmed.replaceAll("\n", ",") + "]")
+        : [];
+      setGeojson({ type: "FeatureCollection", features });
+    } catch (/** @type {any} */ e) {
+      if (e.name !== "AbortError") throw e;
+    }
   };
 
   const onMoveEnd = (/** @type {ViewStateChangeEvent} */ e) =>
@@ -200,6 +205,11 @@ function LastSeen({ time, speed, altitude, city, recent }) {
     return () => clearInterval(id);
   }, [time]);
 
+  const parts = [ago];
+  if (city) parts.push(`${city.name}, ${city.country}`);
+  if (speed > 0) parts.push(`${Math.round(speed * 3.6)} km/h`);
+  if (altitude > 0) parts.push(`${Math.round(altitude)} m`);
+
   return html`
     <div
       class="absolute top-4 left-1/2 -translate-x-1/2 z-10 bg-white/90 rounded-lg shadow px-3 py-1.5 text-xs font-sans select-none whitespace-nowrap flex items-center gap-1.5"
@@ -213,7 +223,7 @@ function LastSeen({ time, speed, altitude, city, recent }) {
           <span class="relative inline-flex size-2.5 rounded-full bg-red-500" />
         </span>
       `}
-      <span>${ago}${city ? ` · ${city.name}, ${city.country}` : ""}${speed > 0 ? ` · ${Math.round(speed * 3.6)} km/h` : ""}${altitude > 0 ? ` · ${Math.round(altitude)} m` : ""}</span>
+      <span>${parts.join(" · ")}</span>
     </div>
   `;
 }

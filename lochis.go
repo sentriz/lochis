@@ -34,7 +34,7 @@ var (
 	schema []byte
 	//go:embed cities.db
 	citiesDB []byte
-	//go:embed index.html lochis.js
+	//go:embed index.html lochis.js favicon.svg
 	indexFS embed.FS
 )
 
@@ -131,7 +131,7 @@ func main() {
 	})
 
 	mux.HandleFunc("GET /tags", func(w http.ResponseWriter, r *http.Request) {
-		var tags []Tag
+		tags := []Tag{}
 		if err := sqlb.QueryRows(r.Context(), db, sqlb.Append(&tags), "select * from tags"); err != nil {
 			http.Error(w, "error reading tags", http.StatusInternalServerError)
 			return
@@ -159,6 +159,10 @@ func main() {
 	mux.HandleFunc("GET /now", func(w http.ResponseWriter, r *http.Request) {
 		var h History
 		if err := sqlb.QueryRow(r.Context(), db, &h, "select * from history where tag_id is null order by time desc limit 1"); err != nil {
+			if errors.Is(err, sql.ErrNoRows) {
+				http.NotFound(w, r)
+				return
+			}
 			http.Error(w, err.Error(), http.StatusInternalServerError)
 			return
 		}
