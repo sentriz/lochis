@@ -212,7 +212,7 @@ function LastSeen({ time, speed, altitude, city, recent }) {
 
   return html`
     <div
-      class="absolute top-4 left-1/2 -translate-x-1/2 z-10 bg-white/90 backdrop-blur-sm rounded-lg shadow px-3 py-1.5 text-xs font-sans select-none whitespace-nowrap flex items-center gap-1.5"
+      class="absolute top-4 left-1/2 -translate-x-1/2 z-10 bg-white/90 rounded-lg shadow px-3 py-1.5 text-xs font-sans select-none whitespace-nowrap flex items-center gap-1.5"
     >
       ${recent &&
       html`
@@ -242,9 +242,9 @@ function LayerControls({
 }) {
   return html`
     <div
-      class="absolute bottom-4 left-4 z-10 bg-white/90 backdrop-blur-sm rounded-lg shadow px-3 py-2 text-xs font-sans select-none w-max"
+      class="absolute bottom-4 left-4 z-10 bg-white/90 rounded-lg shadow px-3 py-2 text-xs font-sans select-none min-w-40"
     >
-      <div class="flex items-center gap-2 py-1 ${historyVisible ? "" : "opacity-40"}">
+      <div class="flex items-center gap-2 py-1">
         <input
           type="checkbox"
           checked=${historyVisible}
@@ -259,7 +259,7 @@ function LayerControls({
           step="0.05"
           value=${blend}
           disabled=${!historyVisible}
-onInput=${(/** @type {Event & { target: HTMLInputElement }} */ e) =>
+          onInput=${(/** @type {Event & { target: HTMLInputElement }} */ e) =>
             setBlend(parseFloat(e.target.value))}
         />
         <span class="text-xs">Explore</span>
@@ -288,32 +288,36 @@ onInput=${(/** @type {Event & { target: HTMLInputElement }} */ e) =>
 
 ReactDOM.createRoot(document.body).render(html`<${App} />`);
 
+const BASE_OPACITY = [0.9, 0.7, 0.5];
+
 // prettier-ignore
 const frequentPaint = (/** @type {number} */ blend) => ({
-  "heatmap-opacity": 1 - blend,
-  "heatmap-weight": ["interpolate", ["exponential", 0.5], ["get", "weight"], 1, 0, 20, 0.03, 100, 0.15, 500, 0.5, 10000, 1],
-  "heatmap-intensity": ["interpolate", ["linear"], ["zoom"], 0, 1.2, 10, 2.5, 18, 4.5],
-  "heatmap-radius": ["interpolate", ["linear"], ["zoom"], 0, 9, 10, 22, 18, 32],
+  "heatmap-opacity": ["interpolate", ["linear"], ["zoom"], 0, BASE_OPACITY[0] * (1 - blend), 14, BASE_OPACITY[1] * (1 - blend), 18, BASE_OPACITY[2] * (1 - blend)],
+  "heatmap-weight": ["interpolate", ["exponential", 0.5], ["get", "weight"], 1, 0, 10, 0.03, 50, 0.15, 200, 0.4, 1000, 0.75, 10000, 1],
+  "heatmap-intensity": ["interpolate", ["linear"], ["zoom"], 0, 2, 5, 2.5, 8, 2.5, 12, 3, 15, 3, 18, 5],
+  "heatmap-radius": ["interpolate", ["linear"], ["zoom"], 0, 12, 5, 28, 10, 30, 14, 25, 16, 15, 18, 10],
   "heatmap-color": [
     "interpolate", ["linear"], ["heatmap-density"],
-    0, "rgba(0,0,0,0)",
-    0.15, "rgb(63,0,125)",
-    0.3, "rgb(130,10,140)",
-    0.5, "rgb(187,55,84)",
-    0.7, "rgb(230,120,50)",
-    0.85, "rgb(252,187,50)",
-    1, "rgb(255,255,178)",
+    0, "rgba(0, 0, 255, 0)",
+    0.1, "rgba(0, 100, 255, 0.3)",
+    0.3, "rgba(0, 128, 255, 0.5)",
+    0.5, "rgba(0, 255, 128, 0.6)",
+    0.7, "rgba(255, 255, 0, 0.8)",
+    1, "rgba(255, 0, 0, 1)",
   ],
 });
 
 // prettier-ignore
 const explorePaint = (/** @type {number} */ blend) => ({
   "circle-opacity": blend,
-  "circle-color": ["interpolate", ["linear"], ["get", "weight"], 1, "rgb(120,130,240)", 100, "rgb(234,88,12)", 500, "rgb(220,38,38)"],
-  "circle-radius": ["interpolate", ["linear"], ["zoom"], 0, 1, 10, 4, 18, 8],
-  "circle-blur": 0.3,
-  "circle-stroke-color": "rgba(255,255,255,0.5)",
-  "circle-stroke-width": blend > 0.5 ? 0.5 : 0,
+  "circle-color": ["interpolate", ["exponential", 0.5], ["get", "weight"], 1, "rgba(0,80,255,0.1)", 10, "rgba(255,30,0,0.8)", 50, "rgba(255,160,0,0.7)", 200, "rgba(0,180,255,0.4)", 1000, "rgba(0,80,255,0.25)", 10000, "rgba(0,40,255,0.1)"],
+  "circle-radius": [
+    "interpolate", ["linear"], ["zoom"],
+    0, ["interpolate", ["exponential", 0.5], ["get", "weight"], 1, 1, 10, 4, 50, 3, 200, 2, 1000, 1.5, 10000, 1],
+    10, ["interpolate", ["exponential", 0.5], ["get", "weight"], 1, 2, 10, 8, 50, 6, 200, 4, 1000, 3, 10000, 2],
+    16, ["interpolate", ["exponential", 0.5], ["get", "weight"], 1, 3, 10, 12, 50, 9, 200, 6, 1000, 4, 10000, 3],
+  ],
+  "circle-blur": 0.4,
 });
 
 // prettier-ignore
@@ -321,8 +325,8 @@ const taggedPaint = (/** @type {string} */ colour) => ({
   "circle-color": colour,
   "circle-radius": ["interpolate", ["linear"], ["zoom"], 0, 3, 10, 6, 16, 9],
   "circle-opacity": 0.9,
-  "circle-blur": 0.05,
-  "circle-stroke-color": "rgba(0,0,0,0.25)",
-  "circle-stroke-width": 1,
-  "circle-stroke-opacity": 1,
+  "circle-blur": 0.1,
+  "circle-stroke-color": "white",
+  "circle-stroke-width": 1.5,
+  "circle-stroke-opacity": 0.9,
 });
