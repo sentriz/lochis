@@ -106,6 +106,8 @@ func main() {
 			where latitude between ? and ? and longitude between ? and ?`,
 			south, north, west, east,
 		)
+		q.Append("and altitude < ?", 3000)
+
 		if v := params.Get("start"); v != "" {
 			q.Append("and time >= ?", v)
 		}
