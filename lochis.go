@@ -29,6 +29,15 @@ import (
 	"golang.org/x/tools/txtar"
 )
 
+var (
+	//go:embed schema.sql
+	schema []byte
+	//go:embed cities.db
+	citiesDB []byte
+	//go:embed index.html lochis.js
+	indexFS embed.FS
+)
+
 func main() {
 	var (
 		listenAddr = flag.String("listen-addr", "", "listen addr")
@@ -72,13 +81,13 @@ func main() {
 		return
 	}
 
-	readervfs.Create("cities", ioutil.NewSizeReaderAt(bytes.NewReader(citiesDBEmbed)))
-	citiesDB, err := sql.Open("sqlite3", "file:cities?vfs=reader")
+	readervfs.Create("cities", ioutil.NewSizeReaderAt(bytes.NewReader(citiesDB)))
+	cdb, err := sql.Open("sqlite3", "file:cities?vfs=reader")
 	if err != nil {
 		slog.ErrorContext(ctx, "open cities db", "err", err)
 		return
 	}
-	defer citiesDB.Close()
+	defer cdb.Close()
 
 	mux := http.NewServeMux()
 
@@ -157,7 +166,7 @@ func main() {
 		const spread = 0.5
 
 		var city City
-		if err := sqlb.QueryRow(r.Context(), citiesDB, &city, `
+		if err := sqlb.QueryRow(r.Context(), cdb, &city, `
 			select *
 			from cities
 			where latitude between ? and ? and longitude between ? and ?
@@ -258,15 +267,6 @@ type History struct {
 	Longitude float64       `json:"longitude"`
 	TagID     sql.NullInt64 `json:"tag_id"`
 }
-
-//go:embed schema.sql
-var schema []byte
-
-//go:embed index.html lochis.js
-var indexFS embed.FS
-
-//go:embed cities.db
-var citiesDBEmbed []byte
 
 func dbMigrate(ctx context.Context, db *sql.DB) error {
 	var nextVer int
