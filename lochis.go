@@ -40,9 +40,10 @@ var (
 
 func main() {
 	var (
-		listenAddr = flag.String("listen-addr", "", "listen addr")
-		dbPath     = flag.String("db-path", "lochis.db", "DB path")
-		apiKey     = flag.String("api-key", "", "API key")
+		listenAddr     = flag.String("listen-addr", "", "listen addr")
+		dbPath         = flag.String("db-path", "lochis.db", "DB path")
+		apiKey         = flag.String("api-key", "", "API key")
+		maptilerAPIKey = flag.String("maptiler-api-key", "", "maptiler API key")
 	)
 	flag.Parse()
 	flagconf.ParseEnv()
@@ -57,6 +58,10 @@ func main() {
 	}
 	if *apiKey == "" {
 		slog.Error("need an API key")
+		return
+	}
+	if *maptilerAPIKey == "" {
+		slog.Error("need a maptiler API key")
 		return
 	}
 
@@ -205,6 +210,12 @@ func main() {
 			http.Error(w, err.Error(), http.StatusInternalServerError)
 			return
 		}
+	})
+
+	mux.HandleFunc("GET /config", func(w http.ResponseWriter, r *http.Request) {
+		json.NewEncoder(w).Encode(map[string]string{
+			"maptilerAPIKey": *maptilerAPIKey,
+		})
 	})
 
 	mux.Handle("GET /", http.FileServer(http.FS(indexFS)))

@@ -19,7 +19,18 @@ const html = htm.bind(React.createElement);
 /** @type {FeatureCollection} */
 const EMPTY_FC = { type: "FeatureCollection", features: [] };
 
+/** @typedef {{ maptilerAPIKey: string }} Config */
+
 function App() {
+  const [config, setConfig] = useState(/** @type {Config | undefined} */ (undefined));
+  useEffect(() => {
+    (async () => {
+      /** @type {Config} */
+      const config = await (await fetch("/config")).json();
+      setConfig(config);
+    })();
+  }, []);
+
   const [tags, setTags] = useState(/** @type {Tag[]} */ ([]));
   useEffect(() => {
     (async () => {
@@ -103,7 +114,7 @@ function App() {
       onMoveEnd=${onMoveEnd}
       onLoad=${onLoad}
       class="size-full"
-      mapStyle="https://api.maptiler.com/maps/basic/style.json?key=Bv2vxexRBtcQcOED6oyr"
+      mapStyle=${config ? `https://api.maptiler.com/maps/basic/style.json?key=${config.maptilerAPIKey}` : undefined}
     >
       <${Source} id="history" type="geojson" data=${geojson}>
         <${Layer}
