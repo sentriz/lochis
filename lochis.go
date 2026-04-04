@@ -32,7 +32,7 @@ import (
 var (
 	//go:embed schema.sql
 	schema []byte
-	//go:embed cities.db
+	//go:embed cities
 	citiesDB []byte
 	//go:embed index.html lochis.js favicon.svg
 	indexFS embed.FS
@@ -236,11 +236,6 @@ func main() {
 		slog.ErrorContext(ctx, "start http", "err", err)
 		return
 	}
-}
-
-type GeoJSON struct {
-	Type     string    `json:"type"`
-	Features []Feature `json:"features"`
 }
 
 type Feature struct {
