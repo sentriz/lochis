@@ -19,7 +19,7 @@ const html = htm.bind(React.createElement);
 /** @type {FeatureCollection} */
 const EMPTY_FC = { type: "FeatureCollection", features: [] };
 
-/** @typedef {{ maptilerAPIKey: string }} Config */
+/** @typedef {{ maptiler_api_key: string, tags: Tag[] }} Config */
 
 function App() {
   const [config, setConfig] = useState(/** @type {Config | undefined} */ (undefined));
@@ -28,15 +28,6 @@ function App() {
       /** @type {Config} */
       const config = await (await fetch("/config")).json();
       setConfig(config);
-    })();
-  }, []);
-
-  const [tags, setTags] = useState(/** @type {Tag[]} */ ([]));
-  useEffect(() => {
-    (async () => {
-      /** @type {Tag[]} */
-      const tags = await (await fetch("/tags")).json();
-      setTags(tags);
     })();
   }, []);
 
@@ -104,6 +95,7 @@ function App() {
     ? Date.now() - new Date(now.history.time).getTime() < 20 * 60 * 1000
     : false;
 
+  const tags = config?.tags ?? [];
   const [blend, setBlend] = useState(0.25); // 0 = frequent, 1 = explore
   const [historyVisible, setHistoryVisible] = useState(true);
 
@@ -114,7 +106,7 @@ function App() {
       onMoveEnd=${onMoveEnd}
       onLoad=${onLoad}
       class="size-full"
-      mapStyle=${config ? `https://api.maptiler.com/maps/basic/style.json?key=${config.maptilerAPIKey}` : undefined}
+      mapStyle=${config ? `https://api.maptiler.com/maps/basic/style.json?key=${config.maptiler_api_key}` : undefined}
     >
       <${Source} id="history" type="geojson" data=${geojson}>
         <${Layer}

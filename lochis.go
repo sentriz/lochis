@@ -137,16 +137,16 @@ func main() {
 		}
 	})
 
-	mux.HandleFunc("GET /tags", func(w http.ResponseWriter, r *http.Request) {
-		tags := []Tag{}
-		if err := sqlb.QueryRows(r.Context(), db, sqlb.Append(&tags), "select * from tags"); err != nil {
+	mux.HandleFunc("GET /config", func(w http.ResponseWriter, r *http.Request) {
+		config := Config{
+			MaptilerAPIKey: *maptilerAPIKey,
+			Tags:           []Tag{},
+		}
+		if err := sqlb.QueryRows(r.Context(), db, sqlb.Append(&config.Tags), "select * from tags"); err != nil {
 			http.Error(w, "error reading tags", http.StatusInternalServerError)
 			return
 		}
-		if err := json.NewEncoder(w).Encode(tags); err != nil {
-			http.Error(w, "error sending json", http.StatusInternalServerError)
-			return
-		}
+		json.NewEncoder(w).Encode(config)
 	})
 
 	mux.HandleFunc("POST /now", func(w http.ResponseWriter, r *http.Request) {
@@ -212,12 +212,6 @@ func main() {
 		}
 	})
 
-	mux.HandleFunc("GET /config", func(w http.ResponseWriter, r *http.Request) {
-		json.NewEncoder(w).Encode(map[string]string{
-			"maptilerAPIKey": *maptilerAPIKey,
-		})
-	})
-
 	mux.Handle("GET /", http.FileServer(http.FS(indexFS)))
 
 	var handler http.Handler = mux
@@ -268,6 +262,11 @@ type Tag struct {
 	ID     int    `json:"id"`
 	Name   string `json:"name"`
 	Colour string `json:"colour"`
+}
+
+type Config struct {
+	MaptilerAPIKey string `json:"maptiler_api_key"`
+	Tags           []Tag  `json:"tags"`
 }
 
 type History struct {
