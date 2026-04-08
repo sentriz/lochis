@@ -19,19 +19,6 @@ const html = htm.bind(React.createElement);
 /** @type {FeatureCollection} */
 const EMPTY_FC = { type: "FeatureCollection", features: [] };
 
-/** @param {number} ms */
-const formatDuration = (ms) => {
-  const mins = ms / (60 * 1000);
-  if (mins < 60) return `${Math.round(mins)}m`;
-  const hours = mins / 60;
-  if (hours < 24) return `${Math.round(hours)}h`;
-  const days = hours / 24;
-  if (days < 30) return `${Math.round(days)}d`;
-  const months = days / 30;
-  if (months < 12) return `${Math.round(months)}mo`;
-  return `${Math.round(days / 365)}y`;
-};
-
 /** @typedef {{ maptiler_api_key: string, tags: Tag[], min_time?: string, max_time?: string }} Config */
 /** @typedef {{ start?: Date, end?: Date }} TimeRange */
 
@@ -491,3 +478,16 @@ const taggedPaint = (/** @type {string} */ colour) => ({
   "circle-stroke-width": 1.5,
   "circle-stroke-opacity": 0.9,
 });
+
+/** @param {number} ms */
+const formatDuration = (ms) => {
+  const mins = ms / (60 * 1000);
+  if (mins < 60) return `${Math.round(mins)}m`;
+  const hours = mins / 60;
+  if (hours < 24) return `${Math.round(hours)}h`;
+  const days = hours / 24;
+  if (days < 30) return `${Math.round(days)}d`;
+  const months = days / 30;
+  if (months < 12) return `${Math.round(months)}mo`;
+  return `${Math.round(days / 365)}y`;
+};
