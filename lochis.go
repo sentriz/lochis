@@ -130,7 +130,7 @@ func main() {
 		enc := json.NewEncoder(w)
 		for err := range sqlb.Each(r.Context(), db, sqlb.Into(&f.Geometry.Coordinates[1], &f.Geometry.Coordinates[0], &f.Geometry.Coordinates[2], &f.Properties.Weight, &f.Properties.TagID), "?", q) {
 			if err != nil {
-				slog.ErrorContext(ctx, "scan grouped history", "err", err)
+				slog.ErrorContext(r.Context(), "scan grouped history", "err", err)
 				continue
 			}
 			enc.Encode(&f)
@@ -194,15 +194,7 @@ func main() {
 			return
 		}
 
-		resp := struct {
-			History History `json:"history"`
-			City    City    `json:"city,omitzero"`
-		}{
-			History: h,
-			City:    city,
-		}
-
-		if err := json.NewEncoder(w).Encode(resp); err != nil {
+		if err := json.NewEncoder(w).Encode(NowResponse{History: h, City: city}); err != nil {
 			http.Error(w, "error sending json", http.StatusInternalServerError)
 			return
 		}
@@ -266,6 +258,11 @@ type Tag struct {
 	ID     int    `json:"id"`
 	Name   string `json:"name"`
 	Colour string `json:"colour"`
+}
+
+type NowResponse struct {
+	History History `json:"history"`
+	City    City    `json:"city,omitzero"`
 }
 
 type Config struct {

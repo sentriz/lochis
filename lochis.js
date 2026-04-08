@@ -294,8 +294,9 @@ function TimeControls({
     const dt = new Date(d);
     return `${pad(dt.getHours())}:${pad(dt.getMinutes())}`;
   };
-  /** @type {(date: string, time: string) => Date} */
-  const toDate = (date, time) => new Date(`${date}T${time || "00:00"}`);
+  /** @type {(date: string, time: string) => Date | undefined} */
+  const toDate = (date, time) =>
+    date ? new Date(`${date}T${time || "00:00"}`) : undefined;
 
   /** @type {(...vals: (Date | string | undefined)[]) => string} */
   const minOf = (...vals) => vals.map(fmtDate).filter(Boolean).sort()[0] || "";
