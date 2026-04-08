@@ -146,6 +146,10 @@ func main() {
 			http.Error(w, "error reading tags", http.StatusInternalServerError)
 			return
 		}
+		if err := sqlb.QueryRow(r.Context(), db, sqlb.Into(&config.MinTime, &config.MaxTime), "select min(time), max(time) from history"); err != nil && !errors.Is(err, sql.ErrNoRows) {
+			http.Error(w, "error reading time range", http.StatusInternalServerError)
+			return
+		}
 		json.NewEncoder(w).Encode(config)
 	})
 
@@ -265,8 +269,10 @@ type Tag struct {
 }
 
 type Config struct {
-	MaptilerAPIKey string `json:"maptiler_api_key"`
-	Tags           []Tag  `json:"tags"`
+	MaptilerAPIKey string    `json:"maptiler_api_key"`
+	Tags           []Tag     `json:"tags"`
+	MinTime        time.Time `json:"min_time,omitzero"`
+	MaxTime        time.Time `json:"max_time,omitzero"`
 }
 
 type History struct {

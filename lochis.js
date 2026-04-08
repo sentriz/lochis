@@ -19,10 +19,26 @@ const html = htm.bind(React.createElement);
 /** @type {FeatureCollection} */
 const EMPTY_FC = { type: "FeatureCollection", features: [] };
 
-/** @typedef {{ maptiler_api_key: string, tags: Tag[] }} Config */
+/** @param {number} ms */
+const formatDuration = (ms) => {
+  const mins = ms / (60 * 1000);
+  if (mins < 60) return `${Math.round(mins)}m`;
+  const hours = mins / 60;
+  if (hours < 24) return `${Math.round(hours)}h`;
+  const days = hours / 24;
+  if (days < 30) return `${Math.round(days)}d`;
+  const months = days / 30;
+  if (months < 12) return `${Math.round(months)}mo`;
+  return `${Math.round(days / 365)}y`;
+};
+
+/** @typedef {{ maptiler_api_key: string, tags: Tag[], min_time?: string, max_time?: string }} Config */
+/** @typedef {{ start?: Date, end?: Date }} TimeRange */
 
 function App() {
-  const [config, setConfig] = useState(/** @type {Config | undefined} */ (undefined));
+  const [config, setConfig] = useState(
+    /** @type {Config | undefined} */ (undefined),
+  );
   useEffect(() => {
     (async () => {
       /** @type {Config} */
@@ -45,7 +61,15 @@ function App() {
   /** @type {React.RefObject<AbortController | null>} */
   const controllerRef = useRef(null);
 
+  const [timeRange, setTimeRange] = useState(/** @type {TimeRange} */ ({}));
+  const { start, end } = timeRange;
+  const setStart = (/** @type {Date | undefined} */ v) =>
+    setTimeRange((prev) => ({ ...prev, start: v }));
+  const setEnd = (/** @type {Date | undefined} */ v) =>
+    setTimeRange((prev) => ({ ...prev, end: v }));
   const [geojson, setGeojson] = useState(EMPTY_FC);
+  /** @type {React.RefObject<MapLibreMap | null>} */
+  const mapRef = useRef(null);
   const loadData = async (/** @type {MapLibreMap} */ map) => {
     if (controllerRef.current) controllerRef.current.abort();
     controllerRef.current = new AbortController();
@@ -59,6 +83,8 @@ function App() {
       north: String(bounds.getNorth()),
       zoom: String(zoom),
     });
+    if (start) params.set("start", start.toISOString());
+    if (end) params.set("end", end.toISOString());
 
     try {
       const resp = await fetch(`/geojson/history?${params}`, {
@@ -77,8 +103,11 @@ function App() {
 
   const onMoveEnd = (/** @type {ViewStateChangeEvent} */ e) =>
     loadData(e.target);
-
   const onLoad = (/** @type {MapLibreEvent} */ e) => loadData(e.target);
+
+  useEffect(() => {
+    if (mapRef.current) loadData(mapRef.current);
+  }, [timeRange]);
 
   const [hiddenTags, setHiddenTags] = useState(
     /** @type {Set<number>} */ (new Set()),
@@ -101,12 +130,15 @@ function App() {
 
   return html`
     <${Map}
+      ref=${mapRef}
       initialViewState=${{ zoom: 2, latitude: 51.5, longitude: 0 }}
       hash=${true}
       onMoveEnd=${onMoveEnd}
       onLoad=${onLoad}
       class="size-full"
-      mapStyle=${config ? `https://api.maptiler.com/maps/basic/style.json?key=${config.maptiler_api_key}` : undefined}
+      mapStyle=${config
+        ? `https://api.maptiler.com/maps/basic/style.json?key=${config.maptiler_api_key}`
+        : undefined}
     >
       <${Source} id="history" type="geojson" data=${geojson}>
         <${Layer}
@@ -180,15 +212,26 @@ function App() {
       city=${now.city}
       recent=${nowIsRecent}
     />`}
-    <${LayerControls}
-      blend=${blend}
-      setBlend=${setBlend}
-      historyVisible=${historyVisible}
-      setHistoryVisible=${setHistoryVisible}
-      tags=${tags}
-      hiddenTags=${hiddenTags}
-      toggleTag=${toggleTag}
-    />
+    <div class="absolute bottom-4 left-4 z-10 flex flex-col gap-2">
+      <${TimeControls}
+        start=${start}
+        setStart=${setStart}
+        end=${end}
+        setEnd=${setEnd}
+        setTimeRange=${setTimeRange}
+        minTime=${config?.min_time}
+        maxTime=${config?.max_time}
+      />
+      <${LayerControls}
+        blend=${blend}
+        setBlend=${setBlend}
+        historyVisible=${historyVisible}
+        setHistoryVisible=${setHistoryVisible}
+        tags=${tags}
+        hiddenTags=${hiddenTags}
+        toggleTag=${toggleTag}
+      />
+    </div>
   `;
 }
 
@@ -197,11 +240,8 @@ function LastSeen({ time, speed, altitude, city, recent }) {
   const [ago, setAgo] = useState("");
   useEffect(() => {
     const update = () => {
-      const diff = Math.floor((Date.now() - new Date(time).getTime()) / 1000);
-      if (diff < 60) setAgo("just now");
-      else if (diff < 3600) setAgo(`${Math.floor(diff / 60)}m ago`);
-      else if (diff < 86400) setAgo(`${Math.floor(diff / 3600)}h ago`);
-      else setAgo(`${Math.floor(diff / 86400)}d ago`);
+      const diff = Date.now() - new Date(time).getTime();
+      setAgo(diff < 60_000 ? "just now" : `${formatDuration(diff)} ago`);
     };
     update();
     const id = setInterval(update, 30_000);
@@ -231,6 +271,123 @@ function LastSeen({ time, speed, altitude, city, recent }) {
   `;
 }
 
+/** @param {{ start: Date | undefined, setStart: (v: Date | undefined) => void, end: Date | undefined, setEnd: (v: Date | undefined) => void, setTimeRange: (v: TimeRange) => void, minTime?: string, maxTime?: string }} props */
+function TimeControls({
+  start,
+  setStart,
+  end,
+  setEnd,
+  setTimeRange,
+  minTime,
+  maxTime,
+}) {
+  const pad = (/** @type {number} */ n) => String(n).padStart(2, "0");
+  /** @type {(d?: Date | string) => string} */
+  const fmtDate = (d) => {
+    if (!d) return "";
+    const dt = new Date(d);
+    return `${dt.getFullYear()}-${pad(dt.getMonth() + 1)}-${pad(dt.getDate())}`;
+  };
+  /** @type {(d?: Date | string) => string} */
+  const fmtTime = (d) => {
+    if (!d) return "";
+    const dt = new Date(d);
+    return `${pad(dt.getHours())}:${pad(dt.getMinutes())}`;
+  };
+  /** @type {(date: string, time: string) => Date} */
+  const toDate = (date, time) => new Date(`${date}T${time || "00:00"}`);
+
+  /** @type {(...vals: (Date | string | undefined)[]) => string} */
+  const minOf = (...vals) => vals.map(fmtDate).filter(Boolean).sort()[0] || "";
+  /** @type {(...vals: (Date | string | undefined)[]) => string} */
+  const maxOf = (...vals) =>
+    vals.map(fmtDate).filter(Boolean).sort().pop() || "";
+
+  const startMax = minOf(end, maxTime);
+  const endMin = maxOf(start, minTime);
+
+  const hasWindow = start && end && end.getTime() > start.getTime();
+  const windowMs = hasWindow ? end.getTime() - start.getTime() : 0;
+  const canShiftBack =
+    hasWindow &&
+    (!minTime || new Date(minTime).getTime() <= start.getTime() - windowMs);
+  const canShiftForward =
+    hasWindow &&
+    (!maxTime || end.getTime() + windowMs <= new Date(maxTime).getTime());
+  const shift = (/** @type {number} */ dir) => {
+    setTimeRange({
+      start: new Date(/** @type {Date} */ (start).getTime() + windowMs * dir),
+      end: new Date(/** @type {Date} */ (end).getTime() + windowMs * dir),
+    });
+  };
+
+  return html`
+    <div
+      class="bg-white/90 rounded-lg shadow px-3 py-2 text-xs font-sans select-none"
+    >
+      <div class="flex items-center justify-between gap-1">
+        <input
+          type="date"
+          class="bg-transparent text-xs"
+          value=${fmtDate(start)}
+          min=${fmtDate(minTime)}
+          max=${startMax}
+          onChange=${(/** @type {Event & { target: HTMLInputElement }} */ e) =>
+            setStart(
+              e.target.value
+                ? toDate(e.target.value, fmtTime(start))
+                : undefined,
+            )}
+        />
+        <input
+          type="time"
+          class="bg-transparent text-xs"
+          value=${fmtTime(start)}
+          disabled=${!start}
+          onChange=${(/** @type {Event & { target: HTMLInputElement }} */ e) =>
+            setStart(toDate(fmtDate(start), e.target.value))}
+        />
+        <span class="text-xs">–</span>
+        <input
+          type="date"
+          class="bg-transparent text-xs"
+          value=${fmtDate(end)}
+          min=${endMin}
+          max=${fmtDate(maxTime)}
+          onChange=${(/** @type {Event & { target: HTMLInputElement }} */ e) =>
+            setEnd(
+              e.target.value ? toDate(e.target.value, fmtTime(end)) : undefined,
+            )}
+        />
+        <input
+          type="time"
+          class="bg-transparent text-xs"
+          value=${fmtTime(end)}
+          disabled=${!end}
+          onChange=${(/** @type {Event & { target: HTMLInputElement }} */ e) =>
+            setEnd(toDate(fmtDate(end), e.target.value))}
+        />
+      </div>
+      <div class="flex items-center gap-1 pt-1">
+        <button
+          class="flex-1 px-1.5 py-0.5 rounded bg-gray-200 hover:bg-gray-300 disabled:opacity-30"
+          disabled=${!canShiftBack}
+          onClick=${() => shift(-1)}
+        >
+          ${"<"} ${hasWindow ? formatDuration(windowMs) : ""}
+        </button>
+        <button
+          class="flex-1 px-1.5 py-0.5 rounded bg-gray-200 hover:bg-gray-300 disabled:opacity-30"
+          disabled=${!canShiftForward}
+          onClick=${() => shift(1)}
+        >
+          ${hasWindow ? formatDuration(windowMs) : ""} ${">"}
+        </button>
+      </div>
+    </div>
+  `;
+}
+
 /**
  * @param {{ blend: number, setBlend: (v: number) => void, historyVisible: boolean, setHistoryVisible: (v: boolean) => void, tags: Tag[], hiddenTags: Set<number>, toggleTag: (id: number) => void }} props
  */
@@ -245,7 +402,7 @@ function LayerControls({
 }) {
   return html`
     <div
-      class="absolute bottom-4 left-4 z-10 bg-white/90 rounded-lg shadow px-3 py-2 text-xs font-sans select-none min-w-40"
+      class="bg-white/90 rounded-lg shadow px-3 py-2 text-xs font-sans select-none min-w-40"
     >
       <div class="flex items-center gap-2 py-1">
         <input
