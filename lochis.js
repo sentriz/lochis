@@ -268,19 +268,6 @@ function TimeControls({
   minTime,
   maxTime,
 }) {
-  const pad = (/** @type {number} */ n) => String(n).padStart(2, "0");
-  /** @type {(d?: Date | string) => string} */
-  const fmtDate = (d) => {
-    if (!d) return "";
-    const dt = new Date(d);
-    return `${dt.getFullYear()}-${pad(dt.getMonth() + 1)}-${pad(dt.getDate())}`;
-  };
-  /** @type {(d?: Date | string) => string} */
-  const fmtTime = (d) => {
-    if (!d) return "";
-    const dt = new Date(d);
-    return `${pad(dt.getHours())}:${pad(dt.getMinutes())}`;
-  };
   /** @type {(date: string, time: string) => Date | undefined} */
   const toDate = (date, time) =>
     date ? new Date(`${date}T${time || "00:00"}`) : undefined;
@@ -479,6 +466,27 @@ const taggedPaint = (/** @type {string} */ colour) => ({
   "circle-stroke-opacity": 0.9,
 });
 
+/** @type {(d?: Date | string) => string} */
+const fmtDate = (d) => {
+  if (!d) return "";
+  const dt = new Date(d);
+  return `${dt.getFullYear()}-${pad2(dt.getMonth() + 1)}-${pad2(dt.getDate())}`;
+};
+
+/** @type {(d?: Date | string) => string} */
+const fmtTime = (d) => {
+  if (!d) return "";
+  const dt = new Date(d);
+  return `${pad2(dt.getHours())}:${pad2(dt.getMinutes())}`;
+};
+
+/** @type {(d?: Date | string) => string} */
+const fmtDateTime = (d) => {
+  if (!d) return "";
+  const dt = new Date(d);
+  const date = fmtDate(dt);
+  return dt.getHours() || dt.getMinutes() ? `${date}T${fmtTime(dt)}` : date;
+};
 /** @param {number} ms */
 const formatDuration = (ms) => {
   const mins = ms / (60 * 1000);
