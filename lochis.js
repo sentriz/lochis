@@ -219,7 +219,7 @@ function App() {
       city=${now.city}
       recent=${nowIsRecent}
     />`}
-    <div class="absolute bottom-4 left-4 z-10 flex flex-col gap-2">
+    <div class="absolute bottom-4 left-4 right-4 z-10 flex flex-col gap-2 max-w-sm">
       <${TimeControls}
         start=${start}
         end=${end}
@@ -312,10 +312,10 @@ function TimeControls({ start, end, minTime, maxTime }) {
     <div
       class="bg-white/90 rounded-lg shadow px-3 py-2 text-xs font-sans select-none"
     >
-      <div class="flex items-center justify-between gap-1">
+      <div class="flex items-center gap-1">
         <input
           type="date"
-          class="bg-transparent text-xs"
+          class="bg-transparent text-xs min-w-0 flex-1"
           value=${fmtDate(start)}
           min=${fmtDate(minTime)}
           max=${startMax}
@@ -328,16 +328,17 @@ function TimeControls({ start, end, minTime, maxTime }) {
         />
         <input
           type="time"
-          class="bg-transparent text-xs"
+          class="bg-transparent text-xs min-w-0"
           value=${fmtTime(start)}
           disabled=${!start}
           onChange=${(/** @type {Event & { target: HTMLInputElement }} */ e) =>
             setHash({ s: fmtDateTime(toDate(fmtDate(start), e.target.value)) })}
         />
-        <span class="text-xs">–</span>
+      </div>
+      <div class="flex items-center gap-1">
         <input
           type="date"
-          class="bg-transparent text-xs"
+          class="bg-transparent text-xs min-w-0 flex-1"
           value=${fmtDate(end)}
           min=${endMin}
           max=${fmtDate(maxTime)}
@@ -350,7 +351,7 @@ function TimeControls({ start, end, minTime, maxTime }) {
         />
         <input
           type="time"
-          class="bg-transparent text-xs"
+          class="bg-transparent text-xs min-w-0"
           value=${fmtTime(end)}
           disabled=${!end}
           onChange=${(/** @type {Event & { target: HTMLInputElement }} */ e) =>
