@@ -3,7 +3,12 @@
 /** @import { ViewStateChangeEvent } from "@vis.gl/react-maplibre" */
 /** @import { MapLibreEvent, Map as MapLibreMap } from "maplibre-gl" */
 
-import React, { useState, useRef, useEffect } from "react";
+import React, {
+  useState,
+  useRef,
+  useEffect,
+  useSyncExternalStore,
+} from "react";
 import ReactDOM from "react-dom/client";
 import htm from "htm";
 import { Map, Source, Layer } from "@vis.gl/react-maplibre";
@@ -20,7 +25,6 @@ const html = htm.bind(React.createElement);
 const EMPTY_FC = { type: "FeatureCollection", features: [] };
 
 /** @typedef {{ maptiler_api_key: string, tags: Tag[], min_time?: string, max_time?: string }} Config */
-/** @typedef {{ start?: Date, end?: Date }} TimeRange */
 
 function App() {
   const [config, setConfig] = useState(
@@ -48,12 +52,13 @@ function App() {
   /** @type {React.RefObject<AbortController | null>} */
   const controllerRef = useRef(null);
 
-  const [timeRange, setTimeRange] = useState(/** @type {TimeRange} */ ({}));
-  const { start, end } = timeRange;
-  const setStart = (/** @type {Date | undefined} */ v) =>
-    setTimeRange((prev) => ({ ...prev, start: v }));
-  const setEnd = (/** @type {Date | undefined} */ v) =>
-    setTimeRange((prev) => ({ ...prev, end: v }));
+  const lat = useHash("lt", Number, 51.5);
+  const lng = useHash("lg", Number, 0);
+  const zoom = useHash("z", Number, 2);
+  const bearing = useHash("b", Number, 0);
+  const pitch = useHash("p", Number, 0);
+  const start = useHash("s", (s) => new Date(s));
+  const end = useHash("e", (s) => new Date(s));
   const [geojson, setGeojson] = useState(EMPTY_FC);
   /** @type {React.RefObject<MapLibreMap | null>} */
   const mapRef = useRef(null);
@@ -88,13 +93,23 @@ function App() {
     }
   };
 
-  const onMoveEnd = (/** @type {ViewStateChangeEvent} */ e) =>
-    loadData(e.target);
+  const onMoveEnd = (/** @type {ViewStateChangeEvent} */ e) => {
+    const m = e.target;
+    const c = m.getCenter();
+    setHash({
+      lt: c.lat.toFixed(5),
+      lg: c.lng.toFixed(5),
+      z: m.getZoom().toFixed(2),
+      b: Math.abs(m.getBearing()) > 0.1 ? m.getBearing().toFixed(1) : undefined,
+      p: Math.abs(m.getPitch()) > 0.1 ? m.getPitch().toFixed(1) : undefined,
+    });
+    loadData(m);
+  };
   const onLoad = (/** @type {MapLibreEvent} */ e) => loadData(e.target);
 
   useEffect(() => {
     if (mapRef.current) loadData(mapRef.current);
-  }, [timeRange]);
+  }, [start?.getTime(), end?.getTime()]);
 
   const [hiddenTags, setHiddenTags] = useState(
     /** @type {Set<number>} */ (new Set()),
@@ -118,8 +133,13 @@ function App() {
   return html`
     <${Map}
       ref=${mapRef}
-      initialViewState=${{ zoom: 2, latitude: 51.5, longitude: 0 }}
-      hash=${true}
+      initialViewState=${{
+        latitude: lat,
+        longitude: lng,
+        zoom,
+        bearing,
+        pitch,
+      }}
       onMoveEnd=${onMoveEnd}
       onLoad=${onLoad}
       class="size-full"
@@ -202,10 +222,7 @@ function App() {
     <div class="absolute bottom-4 left-4 z-10 flex flex-col gap-2">
       <${TimeControls}
         start=${start}
-        setStart=${setStart}
         end=${end}
-        setEnd=${setEnd}
-        setTimeRange=${setTimeRange}
         minTime=${config?.min_time}
         maxTime=${config?.max_time}
       />
@@ -258,16 +275,8 @@ function LastSeen({ time, speed, altitude, city, recent }) {
   `;
 }
 
-/** @param {{ start: Date | undefined, setStart: (v: Date | undefined) => void, end: Date | undefined, setEnd: (v: Date | undefined) => void, setTimeRange: (v: TimeRange) => void, minTime?: string, maxTime?: string }} props */
-function TimeControls({
-  start,
-  setStart,
-  end,
-  setEnd,
-  setTimeRange,
-  minTime,
-  maxTime,
-}) {
+/** @param {{ start: Date | undefined, end: Date | undefined, minTime?: string, maxTime?: string }} props */
+function TimeControls({ start, end, minTime, maxTime }) {
   /** @type {(date: string, time: string) => Date | undefined} */
   const toDate = (date, time) =>
     date ? new Date(`${date}T${time || "00:00"}`) : undefined;
@@ -289,12 +298,15 @@ function TimeControls({
   const canShiftForward =
     hasWindow &&
     (!maxTime || end.getTime() + windowMs <= new Date(maxTime).getTime());
-  const shift = (/** @type {number} */ dir) => {
-    setTimeRange({
-      start: new Date(/** @type {Date} */ (start).getTime() + windowMs * dir),
-      end: new Date(/** @type {Date} */ (end).getTime() + windowMs * dir),
+  const shift = (/** @type {number} */ dir) =>
+    setHash({
+      s: fmtDateTime(
+        new Date(/** @type {Date} */ (start).getTime() + windowMs * dir),
+      ),
+      e: fmtDateTime(
+        new Date(/** @type {Date} */ (end).getTime() + windowMs * dir),
+      ),
     });
-  };
 
   return html`
     <div
@@ -308,11 +320,11 @@ function TimeControls({
           min=${fmtDate(minTime)}
           max=${startMax}
           onChange=${(/** @type {Event & { target: HTMLInputElement }} */ e) =>
-            setStart(
-              e.target.value
-                ? toDate(e.target.value, fmtTime(start))
+            setHash({
+              s: e.target.value
+                ? fmtDateTime(toDate(e.target.value, fmtTime(start)))
                 : undefined,
-            )}
+            })}
         />
         <input
           type="time"
@@ -320,7 +332,7 @@ function TimeControls({
           value=${fmtTime(start)}
           disabled=${!start}
           onChange=${(/** @type {Event & { target: HTMLInputElement }} */ e) =>
-            setStart(toDate(fmtDate(start), e.target.value))}
+            setHash({ s: fmtDateTime(toDate(fmtDate(start), e.target.value)) })}
         />
         <span class="text-xs">–</span>
         <input
@@ -330,9 +342,11 @@ function TimeControls({
           min=${endMin}
           max=${fmtDate(maxTime)}
           onChange=${(/** @type {Event & { target: HTMLInputElement }} */ e) =>
-            setEnd(
-              e.target.value ? toDate(e.target.value, fmtTime(end)) : undefined,
-            )}
+            setHash({
+              e: e.target.value
+                ? fmtDateTime(toDate(e.target.value, fmtTime(end)))
+                : undefined,
+            })}
         />
         <input
           type="time"
@@ -340,7 +354,7 @@ function TimeControls({
           value=${fmtTime(end)}
           disabled=${!end}
           onChange=${(/** @type {Event & { target: HTMLInputElement }} */ e) =>
-            setEnd(toDate(fmtDate(end), e.target.value))}
+            setHash({ e: fmtDateTime(toDate(fmtDate(end), e.target.value)) })}
         />
       </div>
       <div class="flex items-center gap-1 pt-1">
@@ -465,6 +479,46 @@ const taggedPaint = (/** @type {string} */ colour) => ({
   "circle-stroke-width": 1.5,
   "circle-stroke-opacity": 0.9,
 });
+
+/**
+ * @template T
+ * @param {string} key
+ * @param {(v: string) => T} parse
+ * @param {T} [initial]
+ * @returns {T | undefined}
+ */
+function useHash(key, parse, initial) {
+  const raw = useSyncExternalStore(
+    (cb) => {
+      addEventListener("hashchange", cb);
+      return () => removeEventListener("hashchange", cb);
+    },
+    () => parseHash()[key],
+  );
+  return raw !== undefined ? parse(raw) : initial;
+}
+
+/** @param {Record<string, any>} params - falsy values remove the key */
+function setHash(params) {
+  const h = { ...parseHash(), ...params };
+  for (const k of Object.keys(h)) if (!h[k]) delete h[k];
+  const s = Object.entries(h)
+    .map(([k, v]) => `${k}=${v}`)
+    .join(",");
+  history.replaceState(null, "", s ? "#" + s : location.pathname);
+  dispatchEvent(new HashChangeEvent("hashchange"));
+}
+
+const parseHash = () =>
+  Object.fromEntries(
+    location.hash
+      .replace(/^#/, "")
+      .split(",")
+      .filter(Boolean)
+      .map((s) => s.split("=")),
+  );
+
+const pad2 = (/** @type {number} */ n) => String(n).padStart(2, "0");
 
 /** @type {(d?: Date | string) => string} */
 const fmtDate = (d) => {
