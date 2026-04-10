@@ -219,7 +219,9 @@ function App() {
       city=${now.city}
       recent=${nowIsRecent}
     />`}
-    <div class="absolute bottom-4 left-4 right-4 z-10 flex flex-col gap-2 max-w-sm">
+    <div
+      class="absolute bottom-4 left-4 right-4 z-10 flex flex-col gap-2 max-w-sm"
+    >
       <${TimeControls}
         start=${start}
         end=${end}
@@ -312,10 +314,13 @@ function TimeControls({ start, end, minTime, maxTime }) {
     <div
       class="bg-white/90 rounded-lg shadow px-3 py-2 text-xs font-sans select-none"
     >
-      <div class="flex items-center gap-1">
+      <div
+        class="grid grid-cols-[auto_1fr_auto] items-center gap-x-1 gap-y-0.5"
+      >
+        <span class="text-gray-500">From</span>
         <input
           type="date"
-          class="bg-transparent text-xs min-w-0 flex-1"
+          class="bg-transparent text-xs"
           value=${fmtDate(start)}
           min=${fmtDate(minTime)}
           max=${startMax}
@@ -328,17 +333,16 @@ function TimeControls({ start, end, minTime, maxTime }) {
         />
         <input
           type="time"
-          class="bg-transparent text-xs min-w-0"
+          class="bg-transparent text-xs"
           value=${fmtTime(start)}
           disabled=${!start}
           onChange=${(/** @type {Event & { target: HTMLInputElement }} */ e) =>
             setHash({ s: fmtDateTime(toDate(fmtDate(start), e.target.value)) })}
         />
-      </div>
-      <div class="flex items-center gap-1">
+        <span class="text-gray-500">To</span>
         <input
           type="date"
-          class="bg-transparent text-xs min-w-0 flex-1"
+          class="bg-transparent text-xs"
           value=${fmtDate(end)}
           min=${endMin}
           max=${fmtDate(maxTime)}
@@ -351,7 +355,7 @@ function TimeControls({ start, end, minTime, maxTime }) {
         />
         <input
           type="time"
-          class="bg-transparent text-xs min-w-0"
+          class="bg-transparent text-xs"
           value=${fmtTime(end)}
           disabled=${!end}
           onChange=${(/** @type {Event & { target: HTMLInputElement }} */ e) =>
