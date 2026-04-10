@@ -161,6 +161,11 @@ func main() {
 		h.Speed, _ = strconv.ParseFloat(r.FormValue("speed"), 64)
 		h.Altitude, _ = strconv.ParseFloat(r.FormValue("alt"), 64)
 
+		if h.Latitude == 0 || h.Longitude == 0 || h.Time.IsZero() {
+			http.Error(w, "missing required params: lat, lng, time", http.StatusBadRequest)
+			return
+		}
+
 		if err := sqlb.Exec(r.Context(), db, "insert into history ?", sqlb.InsertSQL(h)); err != nil {
 			http.Error(w, err.Error(), http.StatusInternalServerError)
 			return
