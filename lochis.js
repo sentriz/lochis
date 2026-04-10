@@ -129,6 +129,7 @@ function App() {
   const tags = config?.tags ?? [];
   const [blend, setBlend] = useState(0.25); // 0 = frequent, 1 = explore
   const [historyVisible, setHistoryVisible] = useState(true);
+  const [nowVisible, setNowVisible] = useState(true);
 
   return html`
     <${Map}
@@ -198,7 +199,7 @@ function App() {
           <${Layer}
             id="now"
             type="circle"
-            layout=${{ visibility: nowIsRecent ? "visible" : "none" }}
+            layout=${{ visibility: nowIsRecent && nowVisible ? "visible" : "none" }}
             paint=${{
               "circle-radius": 8,
               "circle-color": "#3b82f6",
@@ -236,6 +237,9 @@ function App() {
         tags=${tags}
         hiddenTags=${hiddenTags}
         toggleTag=${toggleTag}
+        nowIsRecent=${nowIsRecent}
+        nowVisible=${nowVisible}
+        setNowVisible=${setNowVisible}
       />
     </div>
   `;
@@ -383,7 +387,7 @@ function TimeControls({ start, end, minTime, maxTime }) {
 }
 
 /**
- * @param {{ blend: number, setBlend: (v: number) => void, historyVisible: boolean, setHistoryVisible: (v: boolean) => void, tags: Tag[], hiddenTags: Set<number>, toggleTag: (id: number) => void }} props
+ * @param {{ blend: number, setBlend: (v: number) => void, historyVisible: boolean, setHistoryVisible: (v: boolean) => void, tags: Tag[], hiddenTags: Set<number>, toggleTag: (id: number) => void, nowIsRecent: boolean, nowVisible: boolean, setNowVisible: (v: boolean) => void }} props
  */
 function LayerControls({
   blend,
@@ -393,6 +397,9 @@ function LayerControls({
   tags,
   hiddenTags,
   toggleTag,
+  nowIsRecent,
+  nowVisible,
+  setNowVisible,
 }) {
   return html`
     <div
@@ -418,6 +425,20 @@ function LayerControls({
         />
         <span class="text-xs">Explore</span>
       </div>
+      ${nowIsRecent &&
+      html`
+        <div class="flex items-center gap-2 py-1">
+          <input
+            type="checkbox"
+            checked=${nowVisible}
+            onChange=${() => setNowVisible(!nowVisible)}
+          />
+          <span
+            class="shrink-0 size-2.5 rounded-full bg-blue-500"
+          />
+          <span class="text-xs">Now</span>
+        </div>
+      `}
       ${tags.length > 0 && html`<hr class="my-1 border-gray-300" />`}
       ${tags.map(
         (t) => html`
