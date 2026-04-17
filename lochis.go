@@ -128,7 +128,7 @@ func main() {
 		f.Geometry.Type = "Point"
 
 		enc := json.NewEncoder(w)
-		for err := range sqlb.Each(r.Context(), db, sqlb.Into(&f.Geometry.Coordinates[1], &f.Geometry.Coordinates[0], &f.Geometry.Coordinates[2], &f.Properties.Weight, &f.Properties.TagID), "?", q) {
+		for err := range sqlb.Each(r.Context(), db, sqlb.Scan(&f.Geometry.Coordinates[1], &f.Geometry.Coordinates[0], &f.Geometry.Coordinates[2], &f.Properties.Weight, &f.Properties.TagID), "?", q) {
 			if err != nil {
 				slog.ErrorContext(r.Context(), "scan grouped history", "err", err)
 				continue
@@ -146,7 +146,7 @@ func main() {
 			http.Error(w, "error reading tags", http.StatusInternalServerError)
 			return
 		}
-		if err := sqlb.QueryRow(r.Context(), db, sqlb.Into(&config.MinTime, &config.MaxTime), "select min(time), max(time) from history"); err != nil && !errors.Is(err, sql.ErrNoRows) {
+		if err := sqlb.QueryRow(r.Context(), db, sqlb.Scan(&config.MinTime, &config.MaxTime), "select min(time), max(time) from history"); err != nil && !errors.Is(err, sql.ErrNoRows) {
 			http.Error(w, "error reading time range", http.StatusInternalServerError)
 			return
 		}
@@ -289,7 +289,7 @@ type History struct {
 
 func dbMigrate(ctx context.Context, db *sql.DB) error {
 	var nextVer int
-	if err := sqlb.QueryRow(ctx, db, sqlb.Into(&nextVer), "pragma user_version"); err != nil {
+	if err := sqlb.QueryRow(ctx, db, sqlb.Scan(&nextVer), "pragma user_version"); err != nil {
 		return fmt.Errorf("get schema version: %w", err)
 	}
 
@@ -310,7 +310,7 @@ func dbMigrate(ctx context.Context, db *sql.DB) error {
 
 func importData(ctx context.Context, db *sql.DB, src io.Reader) error {
 	var tagIDs = map[string]int{}
-	if err := sqlb.QueryRows(ctx, db, sqlb.ValueMap(tagIDs), "select name, id from tags"); err != nil {
+	if err := sqlb.QueryRows(ctx, db, sqlb.MapValues(tagIDs), "select name, id from tags"); err != nil {
 		return err
 	}
 
