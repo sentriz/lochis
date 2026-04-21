@@ -97,6 +97,7 @@ func main() {
 	mux := http.NewServeMux()
 
 	mux.HandleFunc("GET /geojson/history", func(w http.ResponseWriter, r *http.Request) {
+		ctx := r.Context()
 		params := r.URL.Query()
 
 		south, _ := strconv.ParseFloat(params.Get("south"), 64)
@@ -128,12 +129,15 @@ func main() {
 		f.Geometry.Type = "Point"
 
 		enc := json.NewEncoder(w)
-		for err := range sqlb.Each(r.Context(), db, sqlb.Scan(&f.Geometry.Coordinates[1], &f.Geometry.Coordinates[0], &f.Geometry.Coordinates[2], &f.Properties.Weight, &f.Properties.TagID), "?", q) {
+		for err := range sqlb.Each(ctx, db, sqlb.Scan(&f.Geometry.Coordinates[1], &f.Geometry.Coordinates[0], &f.Geometry.Coordinates[2], &f.Properties.Weight, &f.Properties.TagID), "?", q) {
 			if err != nil {
-				slog.ErrorContext(r.Context(), "scan grouped history", "err", err)
+				slog.ErrorContext(ctx, "scan grouped history", "err", err)
 				continue
 			}
-			enc.Encode(&f)
+			if err := enc.Encode(&f); err != nil {
+				slog.ErrorContext(ctx, "encode", "err", err)
+				continue
+			}
 		}
 	})
 
@@ -150,7 +154,10 @@ func main() {
 			http.Error(w, "error reading time range", http.StatusInternalServerError)
 			return
 		}
-		json.NewEncoder(w).Encode(config)
+		if err := json.NewEncoder(w).Encode(config); err != nil {
+			slog.ErrorContext(r.Context(), "encode", "err", err)
+			return
+		}
 	})
 
 	mux.HandleFunc("POST /now", func(w http.ResponseWriter, r *http.Request) {
@@ -220,9 +227,10 @@ func main() {
 	handler = logMiddleware(handler)
 
 	server := &http.Server{
-		Addr:        *listenAddr,
-		Handler:     handler,
-		BaseContext: func(l net.Listener) context.Context { return ctx },
+		Addr:              *listenAddr,
+		Handler:           handler,
+		BaseContext:       func(l net.Listener) context.Context { return ctx },
+		ReadHeaderTimeout: 5 * time.Second,
 	}
 
 	slog.InfoContext(ctx, "starting http", "listen_addr", *listenAddr)

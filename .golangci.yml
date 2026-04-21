@@ -1,0 +1,117 @@
+version: "2"
+linters:
+  default: none
+  enable:
+    - asasalint
+    - asciicheck
+    - bidichk
+    - bodyclose
+    - canonicalheader
+    - containedctx
+    - contextcheck
+    - copyloopvar
+    - decorder
+    - dogsled
+    - dupl
+    - dupword
+    - durationcheck
+    - errcheck
+    - errchkjson
+    - errname
+    - errorlint
+    - exptostd
+    - fatcontext
+    - forcetypeassert
+    - funcorder
+    - gocheckcompilerdirectives
+    - gochecksumtype
+    - goconst
+    - gocritic
+    - godot
+    - godox
+    - goheader
+    - gomoddirectives
+    - gomodguard
+    - goprintffuncname
+    - gosec
+    - govet
+    - grouper
+    - iface
+    - importas
+    - ineffassign
+    - interfacebloat
+    - intrange
+    - loggercheck
+    - makezero
+    - mirror
+    - misspell
+    - musttag
+    - nakedret
+    - nilerr
+    - nilnesserr
+    - noctx
+    - nolintlint
+    - nosprintfhostport
+    - paralleltest
+    - perfsprint
+    - predeclared
+    - promlinter
+    - protogetter
+    - reassign
+    - rowserrcheck
+    - sloglint
+    - spancheck
+    - sqlclosecheck
+    - staticcheck
+    - tagalign
+    - testableexamples
+    - testifylint
+    - thelper
+    - tparallel
+    - unconvert
+    - unparam
+    - unused
+    - usestdlibvars
+    - usetesting
+    - wastedassign
+    - whitespace
+  settings:
+    staticcheck:
+      checks:
+        - all
+        - "-QF1008"
+        - "-ST1000"
+    sloglint:
+      kv-only: true
+      context: scope
+      static-msg: true
+      key-naming-case: snake
+      msg-style: lowercased
+    gocritic:
+      disabled-checks:
+        - unlambda
+        - appendAssign
+    gosec:
+      excludes:
+        - G104 # errors unhandled
+    errcheck:
+      exclude-functions:
+        - fmt.Fprintf
+        - os.Setenv
+        - (io.Closer).Close
+        - (*os.File).Close
+        - (*database/sql.DB).Close
+        - (*net/http.ResponseController).Flush
+        - (*bufio.Writer).Flush
+        - (*flag.FlagSet).Parse # have flag.ExitOnError
+        - go.senan.xyz/flagconf.ParseConfig # have flag.ExitOnError
+        - go.senan.xyz/flagconf.ParseEnv # have flag.ExitOnError
+  exclusions:
+    rules:
+      - path: '(.+)_test\.go'
+        linters:
+          - gosec
+      - path: "main.go"
+        linters:
+          - noctx
+        text: 'use log/slog\.'
