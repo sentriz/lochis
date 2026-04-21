@@ -12,7 +12,7 @@ RUN  \
     --mount=type=cache,target=/root/.cache/go-build \
     CGO_ENABLED=0 GOOS=$TARGETOS GOARCH=$TARGETARCH go build -o /out/ .
 
-FROM alpine:3.22
+FROM alpine:3.23
 LABEL org.opencontainers.image.source=https://github.com/sentriz/lochis
 RUN apk add -U --no-cache su-exec
 COPY --from=builder /out/* /usr/local/bin/
