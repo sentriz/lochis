@@ -2,6 +2,7 @@ package main
 
 import (
 	"bytes"
+	"cmp"
 	"context"
 	"crypto/subtle"
 	"database/sql"
@@ -106,19 +107,17 @@ func main() {
 		east, _ := strconv.ParseFloat(params.Get("east"), 64)
 		zoom, _ := strconv.ParseFloat(params.Get("zoom"), 64)
 
-		q := sqlb.NewQuery(`
-			select avg(latitude) as lat, avg(longitude) as lng, avg(altitude) as alt, count(*) as weight, coalesce(tag_id, 0) as tag_id
-			from history
-			where latitude between ? and ? and longitude between ? and ?`,
-			south, north, west, east,
-		)
+		q := sqlb.NewQuery("select avg(latitude) as lat, avg(longitude) as lng, avg(altitude) as alt, count(*) as weight, coalesce(tag_id, 0) as tag_id from history where 1")
+		q.Append("and latitude between ? and ?", south, north)
+		q.Append("and longitude between ? and ?", west, east)
 		q.Append("and altitude < ?", 3000)
 
+		// cast to text: the column has NUMERIC affinity, so '2024' would coerce to an int and TEXT > number is always true
 		if v := params.Get("start"); v != "" {
-			q.Append("and time >= ?", v)
+			q.Append("and cast(time as text) >= ?", v)
 		}
 		if v := params.Get("end"); v != "" {
-			q.Append("and time <= ?", v)
+			q.Append("and cast(time as text) <= ?", v)
 		}
 
 		gridSize := 3.6 / math.Pow(2, zoom)
@@ -138,6 +137,46 @@ func main() {
 				slog.ErrorContext(ctx, "encode", "err", err)
 				continue
 			}
+		}
+	})
+
+	mux.HandleFunc("GET /histogram/history", func(w http.ResponseWriter, r *http.Request) {
+		ctx := r.Context()
+		params := r.URL.Query()
+
+		south, _ := strconv.ParseFloat(params.Get("south"), 64)
+		north, _ := strconv.ParseFloat(params.Get("north"), 64)
+		west, _ := strconv.ParseFloat(params.Get("west"), 64)
+		east, _ := strconv.ParseFloat(params.Get("east"), 64)
+
+		groupFmt := cmp.Or(params.Get("fmt"), "%Y")
+
+		q := sqlb.NewQuery("select strftime(?, time) as start, count(*) as count from history where 1", groupFmt)
+		q.Append("and latitude between ? and ?", south, north)
+		q.Append("and longitude between ? and ?", west, east)
+		q.Append("and altitude < ?", 3000)
+		q.Append("group by start order by start")
+		// no time filter, histogram always shows full range so users can switch buckets
+
+		type bucket struct {
+			Start string `json:"start"`
+			Count int    `json:"count"`
+		}
+
+		var buckets = []bucket{}
+
+		var start, count = "", 0
+		for err := range sqlb.Each(ctx, db, sqlb.Scan(&start, &count), `?`, q) {
+			if err != nil {
+				slog.ErrorContext(ctx, "scan histogram", "err", err)
+				continue
+			}
+			buckets = append(buckets, bucket{Start: start, Count: count})
+		}
+
+		if err := json.NewEncoder(w).Encode(buckets); err != nil {
+			slog.ErrorContext(ctx, "encode", "err", err)
+			return
 		}
 	})
 

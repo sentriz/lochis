@@ -20,6 +20,7 @@ const html = htm.bind(React.createElement);
 /** @typedef {{ id: number, time: string, speed: number, altitude: number, latitude: number, longitude: number }} History */
 /** @typedef {{ name: string, latitude: number, longitude: number, country: string, population: number }} City */
 /** @typedef {{ history: History, city?: City}} Now */
+/** @typedef {{ start: string, count: number }} Bucket */
 
 /** @type {FeatureCollection} */
 const EMPTY_FC = { type: "FeatureCollection", features: [] };
@@ -57,31 +58,20 @@ function App() {
   const zoom = useHash("z", Number, 2);
   const bearing = useHash("b", Number, 0);
   const pitch = useHash("p", Number, 0);
-  const start = useHash("s", (s) => new Date(s));
-  const end = useHash("e", (s) => new Date(s));
+  const start = useHash("s", String);
+  const end = useHash("e", String);
+  const gran = useHash("g", String, BUCKETS[0].label);
   const [geojson, setGeojson] = useState(EMPTY_FC);
+  const [histogram, setHistogram] = useState(/** @type {Bucket[]} */ ([]));
   /** @type {React.RefObject<MapLibreMap | null>} */
   const mapRef = useRef(null);
-  const loadData = async (/** @type {MapLibreMap} */ map) => {
-    if (controllerRef.current) controllerRef.current.abort();
-    controllerRef.current = new AbortController();
 
-    const bounds = map.getBounds();
-    const zoom = map.getZoom();
-    const params = new URLSearchParams({
-      west: String(bounds.getWest()),
-      south: String(bounds.getSouth()),
-      east: String(bounds.getEast()),
-      north: String(bounds.getNorth()),
-      zoom: String(zoom),
-    });
-    if (start) params.set("start", start.toISOString());
-    if (end) params.set("end", end.toISOString());
-
+  const loadGeojson = async (
+    /** @type {URLSearchParams} */ params,
+    /** @type {AbortSignal} */ signal,
+  ) => {
     try {
-      const resp = await fetch(`/geojson/history?${params}`, {
-        signal: controllerRef.current.signal,
-      });
+      const resp = await fetch(`/geojson/history?${params}`, { signal });
       const text = await resp.text();
       const trimmed = text.trim();
       const features = trimmed
@@ -92,6 +82,48 @@ function App() {
       if (e.name !== "AbortError") throw e;
     }
   };
+
+  const loadHistogram = async (
+    /** @type {URLSearchParams} */ params,
+    /** @type {AbortSignal} */ signal,
+  ) => {
+    try {
+      const resp = await fetch(`/histogram/history?${params}`, { signal });
+      setHistogram(await resp.json());
+    } catch (/** @type {any} */ e) {
+      if (e.name !== "AbortError") throw e;
+    }
+  };
+
+  const loadData = (/** @type {MapLibreMap} */ map) => {
+    if (controllerRef.current) controllerRef.current.abort();
+    controllerRef.current = new AbortController();
+    const { signal } = controllerRef.current;
+
+    const bounds = map.getBounds();
+    const params = new URLSearchParams({
+      west: String(bounds.getWest()),
+      south: String(bounds.getSouth()),
+      east: String(bounds.getEast()),
+      north: String(bounds.getNorth()),
+    });
+
+    const geoParams = new URLSearchParams(params);
+    geoParams.set("zoom", String(map.getZoom()));
+    if (start) geoParams.set("start", start);
+    if (end) geoParams.set("end", end);
+
+    const bucket = BUCKETS.find((b) => b.label === gran) ?? BUCKETS[0];
+    const histParams = new URLSearchParams(params);
+    histParams.set("fmt", bucket.fmt);
+
+    loadGeojson(geoParams, signal);
+    loadHistogram(histParams, signal);
+  };
+
+  useEffect(() => {
+    if (mapRef.current) loadData(mapRef.current);
+  }, [start, end, gran]);
 
   const onMoveEnd = (/** @type {ViewStateChangeEvent} */ e) => {
     const m = e.target;
@@ -106,10 +138,6 @@ function App() {
     loadData(m);
   };
   const onLoad = (/** @type {MapLibreEvent} */ e) => loadData(e.target);
-
-  useEffect(() => {
-    if (mapRef.current) loadData(mapRef.current);
-  }, [start?.getTime(), end?.getTime()]);
 
   const [hiddenTags, setHiddenTags] = useState(
     /** @type {Set<number>} */ (new Set()),
@@ -199,7 +227,9 @@ function App() {
           <${Layer}
             id="now"
             type="circle"
-            layout=${{ visibility: nowIsRecent && nowVisible ? "visible" : "none" }}
+            layout=${{
+              visibility: nowIsRecent && nowVisible ? "visible" : "none",
+            }}
             paint=${{
               "circle-radius": 8,
               "circle-color": "#3b82f6",
@@ -223,6 +253,40 @@ function App() {
     <div
       class="absolute bottom-4 left-4 right-4 z-10 flex flex-col gap-2 max-w-sm"
     >
+      <${Histogram}
+        data=${histogram}
+        selectedStart=${start}
+        selectedEnd=${end}
+        gran=${gran}
+        setGran=${(/** @type {string} */ g) =>
+          setHash({
+            g: g === BUCKETS[0].label ? undefined : g,
+            s: undefined,
+            e: undefined,
+          })}
+        onToggle=${(
+          /** @type {string} */ s,
+          /** @type {string | undefined} */ e,
+          /** @type {boolean} */ extend,
+        ) => {
+          if (extend && start) {
+            const newS = s < start ? s : start;
+            const newE =
+              end === undefined || e === undefined
+                ? undefined
+                : e > end
+                  ? e
+                  : end;
+            setHash({ s: newS, e: newE });
+            return;
+          }
+          const sel = start === s;
+          setHash({
+            s: sel ? undefined : s,
+            e: sel ? undefined : e,
+          });
+        }}
+      />
       <${LayerControls}
         blend=${blend}
         setBlend=${setBlend}
@@ -275,6 +339,88 @@ function LastSeen({ time, speed, altitude, city, recent }) {
   `;
 }
 
+/** @param {{ data: Bucket[], selectedStart: string | undefined, selectedEnd: string | undefined, gran: string, setGran: (g: string) => void, onToggle: (start: string, end: string | undefined, extend: boolean) => void }} props */
+function Histogram({
+  data,
+  selectedStart,
+  selectedEnd,
+  gran,
+  setGran,
+  onToggle,
+}) {
+  const max = data.length ? Math.max(...data.map((d) => d.count)) : 0;
+  return html`
+    <div
+      class="bg-white/90 rounded-lg shadow px-3 py-2 text-xs font-sans select-none"
+    >
+      <div class="flex justify-end gap-1 mb-1">
+        ${BUCKETS.map(
+          (b) => html`
+            <button
+              key=${b.label}
+              class=${`px-1.5 rounded ${gran === b.label ? "bg-blue-600 text-white" : "bg-gray-200 text-gray-700 hover:bg-gray-300"}`}
+              onClick=${() => setGran(b.label)}
+            >
+              ${b.label}
+            </button>
+          `,
+        )}
+      </div>
+      <div class="flex gap-0.5 h-20 overflow-x-auto overflow-y-hidden">
+        ${data.flatMap((d, i) => {
+          const selected =
+            selectedStart !== undefined &&
+            d.start >= selectedStart &&
+            (selectedEnd === undefined || d.start < selectedEnd);
+          const dimmed = selectedStart !== undefined && !selected;
+          const barColour = selected
+            ? "bg-blue-600"
+            : dimmed
+              ? "bg-blue-500/20"
+              : "bg-blue-500/60";
+          const labelColour = selected
+            ? "text-gray-900 font-semibold"
+            : dimmed
+              ? "text-gray-400"
+              : "text-gray-500";
+          const bar = html`
+            <div
+              key=${d.start}
+              class="flex-1 flex flex-col cursor-pointer min-w-10 hover:opacity-80"
+              onClick=${(/** @type {MouseEvent} */ ev) =>
+                onToggle(d.start, data[i + 1]?.start, ev.shiftKey)}
+              title=${`${d.start}: ${d.count.toLocaleString()}`}
+            >
+              <div class="flex-1 flex items-end">
+                <div
+                  class=${`w-full rounded-t-sm ${barColour}`}
+                  style=${{
+                    height: `${(d.count / max) * 100}%`,
+                    minHeight: d.count > 0 ? "5px" : 0,
+                  }}
+                />
+              </div>
+              <div
+                class=${`text-[10px] text-center leading-none mt-1 ${labelColour}`}
+              >
+                ${d.start}
+              </div>
+            </div>
+          `;
+          const after = data[i + 1];
+          if (after && nextStart(d.start) !== after.start) {
+            return [
+              bar,
+              html`<div key=${`gap-${d.start}`} class="w-2 shrink-0" />`,
+            ];
+          }
+          return [bar];
+        })}
+      </div>
+    </div>
+  `;
+}
+
 /**
  * @param {{ blend: number, setBlend: (v: number) => void, historyVisible: boolean, setHistoryVisible: (v: boolean) => void, tags: Tag[], hiddenTags: Set<number>, toggleTag: (id: number) => void, nowIsRecent: boolean, nowVisible: boolean, setNowVisible: (v: boolean) => void }} props
  */
@@ -322,9 +468,7 @@ function LayerControls({
             checked=${nowVisible}
             onChange=${() => setNowVisible(!nowVisible)}
           />
-          <span
-            class="shrink-0 size-2.5 rounded-full bg-blue-500"
-          />
+          <span class="shrink-0 size-2.5 rounded-full bg-blue-500" />
           <span class="text-xs">Now</span>
         </div>
       `}
@@ -432,6 +576,28 @@ const parseHash = () =>
       .filter(Boolean)
       .map((s) => s.split("=")),
   );
+
+/** @type {{ label: string, fmt: string }[]} */
+const BUCKETS = [
+  { label: "Y", fmt: "%Y" },
+  { label: "M", fmt: "%Y-%m" },
+  { label: "D", fmt: "%Y-%m-%d" },
+];
+
+/** @param {string} s */
+function nextStart(s) {
+  const parts = s.split("-").map(Number);
+  parts[parts.length - 1]++;
+  // Date does the rollover (e.g. month 13 -> jan next year).
+  const d = new Date(parts[0], (parts[1] ?? 1) - 1, parts[2] ?? 1);
+  return [
+    d.getFullYear(),
+    String(d.getMonth() + 1).padStart(2, "0"),
+    String(d.getDate()).padStart(2, "0"),
+  ]
+    .slice(0, parts.length)
+    .join("-");
+}
 
 /** @param {number} ms */
 const formatDuration = (ms) => {
