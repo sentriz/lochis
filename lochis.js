@@ -379,7 +379,7 @@ function Histogram({
               ? "bg-blue-500/20"
               : "bg-blue-500/60";
           const labelColour = selected
-            ? "text-gray-900 font-semibold"
+            ? "text-gray-900"
             : dimmed
               ? "text-gray-400"
               : "text-gray-500";
