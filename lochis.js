@@ -223,12 +223,6 @@ function App() {
     <div
       class="absolute bottom-4 left-4 right-4 z-10 flex flex-col gap-2 max-w-sm"
     >
-      <${TimeControls}
-        start=${start}
-        end=${end}
-        minTime=${config?.min_time}
-        maxTime=${config?.max_time}
-      />
       <${LayerControls}
         blend=${blend}
         setBlend=${setBlend}
@@ -277,111 +271,6 @@ function LastSeen({ time, speed, altitude, city, recent }) {
         </span>
       `}
       <span>${parts.join(" · ")}</span>
-    </div>
-  `;
-}
-
-/** @param {{ start: Date | undefined, end: Date | undefined, minTime?: string, maxTime?: string }} props */
-function TimeControls({ start, end, minTime, maxTime }) {
-  /** @type {(date: string, time: string) => Date | undefined} */
-  const toDate = (date, time) =>
-    date ? new Date(`${date}T${time || "00:00"}`) : undefined;
-
-  /** @type {(...vals: (Date | string | undefined)[]) => string} */
-  const minOf = (...vals) => vals.map(fmtDate).filter(Boolean).sort()[0] || "";
-  /** @type {(...vals: (Date | string | undefined)[]) => string} */
-  const maxOf = (...vals) =>
-    vals.map(fmtDate).filter(Boolean).sort().pop() || "";
-
-  const startMax = minOf(end, maxTime);
-  const endMin = maxOf(start, minTime);
-
-  const hasWindow = start && end && end.getTime() > start.getTime();
-  const windowMs = hasWindow ? end.getTime() - start.getTime() : 0;
-  const canShiftBack =
-    hasWindow &&
-    (!minTime || new Date(minTime).getTime() <= start.getTime() - windowMs);
-  const canShiftForward =
-    hasWindow &&
-    (!maxTime || end.getTime() + windowMs <= new Date(maxTime).getTime());
-  const shift = (/** @type {number} */ dir) =>
-    setHash({
-      s: fmtDateTime(
-        new Date(/** @type {Date} */ (start).getTime() + windowMs * dir),
-      ),
-      e: fmtDateTime(
-        new Date(/** @type {Date} */ (end).getTime() + windowMs * dir),
-      ),
-    });
-
-  return html`
-    <div
-      class="bg-white/90 rounded-lg shadow px-3 py-2 text-xs font-sans select-none"
-    >
-      <div
-        class="grid grid-cols-[auto_1fr_auto] items-center gap-x-1 gap-y-0.5"
-      >
-        <span class="text-gray-500">From</span>
-        <input
-          type="date"
-          class="bg-transparent text-xs"
-          value=${fmtDate(start)}
-          min=${fmtDate(minTime)}
-          max=${startMax}
-          onChange=${(/** @type {Event & { target: HTMLInputElement }} */ e) =>
-            setHash({
-              s: e.target.value
-                ? fmtDateTime(toDate(e.target.value, fmtTime(start)))
-                : undefined,
-            })}
-        />
-        <input
-          type="time"
-          class="bg-transparent text-xs"
-          value=${fmtTime(start)}
-          disabled=${!start}
-          onChange=${(/** @type {Event & { target: HTMLInputElement }} */ e) =>
-            setHash({ s: fmtDateTime(toDate(fmtDate(start), e.target.value)) })}
-        />
-        <span class="text-gray-500">To</span>
-        <input
-          type="date"
-          class="bg-transparent text-xs"
-          value=${fmtDate(end)}
-          min=${endMin}
-          max=${fmtDate(maxTime)}
-          onChange=${(/** @type {Event & { target: HTMLInputElement }} */ e) =>
-            setHash({
-              e: e.target.value
-                ? fmtDateTime(toDate(e.target.value, fmtTime(end)))
-                : undefined,
-            })}
-        />
-        <input
-          type="time"
-          class="bg-transparent text-xs"
-          value=${fmtTime(end)}
-          disabled=${!end}
-          onChange=${(/** @type {Event & { target: HTMLInputElement }} */ e) =>
-            setHash({ e: fmtDateTime(toDate(fmtDate(end), e.target.value)) })}
-        />
-      </div>
-      <div class="flex items-center gap-1 pt-1">
-        <button
-          class="flex-1 px-1.5 py-0.5 rounded bg-gray-200 hover:bg-gray-300 disabled:opacity-30"
-          disabled=${!canShiftBack}
-          onClick=${() => shift(-1)}
-        >
-          ${"<"} ${hasWindow ? formatDuration(windowMs) : ""}
-        </button>
-        <button
-          class="flex-1 px-1.5 py-0.5 rounded bg-gray-200 hover:bg-gray-300 disabled:opacity-30"
-          disabled=${!canShiftForward}
-          onClick=${() => shift(1)}
-        >
-          ${hasWindow ? formatDuration(windowMs) : ""} ${">"}
-        </button>
-      </div>
     </div>
   `;
 }
@@ -544,29 +433,6 @@ const parseHash = () =>
       .map((s) => s.split("=")),
   );
 
-const pad2 = (/** @type {number} */ n) => String(n).padStart(2, "0");
-
-/** @type {(d?: Date | string) => string} */
-const fmtDate = (d) => {
-  if (!d) return "";
-  const dt = new Date(d);
-  return `${dt.getFullYear()}-${pad2(dt.getMonth() + 1)}-${pad2(dt.getDate())}`;
-};
-
-/** @type {(d?: Date | string) => string} */
-const fmtTime = (d) => {
-  if (!d) return "";
-  const dt = new Date(d);
-  return `${pad2(dt.getHours())}:${pad2(dt.getMinutes())}`;
-};
-
-/** @type {(d?: Date | string) => string} */
-const fmtDateTime = (d) => {
-  if (!d) return "";
-  const dt = new Date(d);
-  const date = fmtDate(dt);
-  return dt.getHours() || dt.getMinutes() ? `${date}T${fmtTime(dt)}` : date;
-};
 /** @param {number} ms */
 const formatDuration = (ms) => {
   const mins = ms / (60 * 1000);
