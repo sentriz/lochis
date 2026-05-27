@@ -227,16 +227,14 @@ function App() {
           <${Layer}
             id="now"
             type="circle"
-            layout=${{
-              visibility: nowIsRecent && nowVisible ? "visible" : "none",
-            }}
+            layout=${{ visibility: nowVisible ? "visible" : "none" }}
             paint=${{
               "circle-radius": 8,
               "circle-color": "#3b82f6",
-              "circle-opacity": 0.9,
+              "circle-opacity": nowIsRecent ? 0.9 : 0.4,
               "circle-stroke-color": "#ffffff",
               "circle-stroke-width": 2,
-              "circle-stroke-opacity": 1,
+              "circle-stroke-opacity": nowIsRecent ? 1 : 0.5,
             }}
           />
         <//>
@@ -264,6 +262,7 @@ function App() {
             s: undefined,
             e: undefined,
           })}
+        onClear=${() => setHash({ s: undefined, e: undefined })}
         onToggle=${(
           /** @type {string} */ s,
           /** @type {string | undefined} */ e,
@@ -295,7 +294,7 @@ function App() {
         tags=${tags}
         hiddenTags=${hiddenTags}
         toggleTag=${toggleTag}
-        nowIsRecent=${nowIsRecent}
+        hasNow=${!!now}
         nowVisible=${nowVisible}
         setNowVisible=${setNowVisible}
       />
@@ -329,9 +328,11 @@ function LastSeen({ time, speed, altitude, city, recent }) {
       html`
         <span class="relative flex size-2.5">
           <span
-            class="animate-ping absolute inline-flex size-full rounded-full bg-red-400 opacity-75"
+            class="animate-ping absolute inline-flex size-full rounded-full bg-blue-400 opacity-75"
           />
-          <span class="relative inline-flex size-2.5 rounded-full bg-red-500" />
+          <span
+            class="relative inline-flex size-2.5 rounded-full bg-blue-500"
+          />
         </span>
       `}
       <span>${parts.join(" · ")}</span>
@@ -339,7 +340,7 @@ function LastSeen({ time, speed, altitude, city, recent }) {
   `;
 }
 
-/** @param {{ data: Bucket[], selectedStart: string | undefined, selectedEnd: string | undefined, gran: string, setGran: (g: string) => void, onToggle: (start: string, end: string | undefined, extend: boolean) => void }} props */
+/** @param {{ data: Bucket[], selectedStart: string | undefined, selectedEnd: string | undefined, gran: string, setGran: (g: string) => void, onToggle: (start: string, end: string | undefined, extend: boolean) => void, onClear: () => void }} props */
 function Histogram({
   data,
   selectedStart,
@@ -347,24 +348,54 @@ function Histogram({
   gran,
   setGran,
   onToggle,
+  onClear,
 }) {
   const max = data.length ? Math.max(...data.map((d) => d.count)) : 0;
+
+  const selectedBars = data.filter(
+    (d) =>
+      selectedStart !== undefined &&
+      d.start >= selectedStart &&
+      (selectedEnd === undefined || d.start < selectedEnd),
+  );
+  const rangeLabel =
+    selectedBars.length > 1
+      ? `${selectedBars[0].start} – ${selectedBars[selectedBars.length - 1].start}`
+      : selectedBars.length === 1
+        ? selectedBars[0].start
+        : selectedStart;
+
   return html`
     <div
       class="bg-white/90 rounded-lg shadow px-3 py-2 text-xs font-sans select-none"
     >
-      <div class="flex justify-end gap-1 mb-1">
-        ${BUCKETS.map(
-          (b) => html`
+      <div class="flex justify-between items-center gap-1 mb-1">
+        <div>
+          ${selectedStart !== undefined &&
+          html`
             <button
-              key=${b.label}
-              class=${`px-1.5 rounded ${gran === b.label ? "bg-blue-600 text-white" : "bg-gray-200 text-gray-700 hover:bg-gray-300"}`}
-              onClick=${() => setGran(b.label)}
+              class="flex items-center gap-1 px-1.5 rounded bg-blue-600 text-white hover:bg-blue-700"
+              onClick=${onClear}
             >
-              ${b.label}
+              <span>${rangeLabel}</span>
+              <span class="text-white/70">✕</span>
             </button>
-          `,
-        )}
+          `}
+        </div>
+        <div class="flex items-center gap-1">
+          <span class="text-gray-400 mr-0.5">Group by</span>
+          ${BUCKETS.map(
+            (b) => html`
+              <button
+                key=${b.label}
+                class=${`px-1.5 rounded ${gran === b.label ? "bg-blue-600 text-white" : "bg-gray-200 text-gray-700 hover:bg-gray-300"}`}
+                onClick=${() => setGran(b.label)}
+              >
+                ${b.label}
+              </button>
+            `,
+          )}
+        </div>
       </div>
       <div class="flex gap-0.5 h-20 overflow-x-auto overflow-y-hidden">
         ${data.flatMap((d, i) => {
@@ -401,7 +432,7 @@ function Histogram({
                 />
               </div>
               <div
-                class=${`text-[10px] text-center leading-none mt-1 ${labelColour}`}
+                class=${`text-xs text-center leading-none mt-1 ${labelColour}`}
               >
                 ${d.start}
               </div>
@@ -422,7 +453,7 @@ function Histogram({
 }
 
 /**
- * @param {{ blend: number, setBlend: (v: number) => void, historyVisible: boolean, setHistoryVisible: (v: boolean) => void, tags: Tag[], hiddenTags: Set<number>, toggleTag: (id: number) => void, nowIsRecent: boolean, nowVisible: boolean, setNowVisible: (v: boolean) => void }} props
+ * @param {{ blend: number, setBlend: (v: number) => void, historyVisible: boolean, setHistoryVisible: (v: boolean) => void, tags: Tag[], hiddenTags: Set<number>, toggleTag: (id: number) => void, hasNow: boolean, nowVisible: boolean, setNowVisible: (v: boolean) => void }} props
  */
 function LayerControls({
   blend,
@@ -432,7 +463,7 @@ function LayerControls({
   tags,
   hiddenTags,
   toggleTag,
-  nowIsRecent,
+  hasNow,
   nowVisible,
   setNowVisible,
 }) {
@@ -446,7 +477,21 @@ function LayerControls({
           checked=${historyVisible}
           onChange=${() => setHistoryVisible(!historyVisible)}
         />
-        <span class="text-xs">Frequent</span>
+        <span
+          class="shrink-0 size-2.5 rounded-full"
+          style=${{
+            background:
+              "conic-gradient(#2563eb, #34d399, #facc15, #ef4444, #2563eb)",
+          }}
+        />
+        <span class="text-xs">History</span>
+      </div>
+      <div class="flex items-center gap-2 pb-1 pl-1">
+        <span
+          class=${`text-xs ${historyVisible ? "text-gray-500" : "text-gray-300"}`}
+        >
+          Frequent
+        </span>
         <input
           class="flex-1"
           type="range"
@@ -458,9 +503,13 @@ function LayerControls({
           onInput=${(/** @type {Event & { target: HTMLInputElement }} */ e) =>
             setBlend(parseFloat(e.target.value))}
         />
-        <span class="text-xs">Explore</span>
+        <span
+          class=${`text-xs ${historyVisible ? "text-gray-500" : "text-gray-300"}`}
+        >
+          Explore
+        </span>
       </div>
-      ${nowIsRecent &&
+      ${hasNow &&
       html`
         <div class="flex items-center gap-2 py-1">
           <input
