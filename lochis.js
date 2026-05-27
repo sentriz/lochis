@@ -1,58 +1,27 @@
 // @ts-check
 
-/** @import { ViewStateChangeEvent } from "@vis.gl/react-maplibre" */
-/** @import { MapLibreEvent, Map as MapLibreMap } from "maplibre-gl" */
+/** @import { MapLibreEvent, Map as MapLibreMap, LngLatBounds } from "maplibre-gl" */
 
-import React, {
-  useState,
-  useRef,
-  useEffect,
-  useSyncExternalStore,
-} from "react";
+import React, { useState, useEffect, useSyncExternalStore } from "react";
 import ReactDOM from "react-dom/client";
+import { createPortal } from "react-dom";
 import htm from "htm";
-import { Map, Source, Layer } from "@vis.gl/react-maplibre";
+import { Map, Source, Layer, Marker } from "@vis.gl/react-maplibre";
 
 const html = htm.bind(React.createElement);
 
 /** @typedef {{ type: "FeatureCollection", features: object[] }} FeatureCollection */
-/** @typedef {{ id: number, name: string, colour: string }} Tag */
-/** @typedef {{ id: number, time: string, speed: number, altitude: number, latitude: number, longitude: number }} History */
-/** @typedef {{ name: string, latitude: number, longitude: number, country: string, population: number }} City */
-/** @typedef {{ history: History, city?: City}} Now */
-/** @typedef {{ start: string, count: number }} Bucket */
+/** @typedef {{ id: number, name: string, colour: string }} TagResp */
+/** @typedef {{ id: number, time: string, speed: number, altitude: number, latitude: number, longitude: number }} HistoryResp */
+/** @typedef {{ name: string, latitude: number, longitude: number, country: string, population: number }} CityResp */
+/** @typedef {{ history: HistoryResp, city?: CityResp}} NowResp */
+/** @typedef {{ start: string, count: number }} BucketResp */
+/** @typedef {{ maptiler_api_key: string, tags: TagResp[], min_time?: string, max_time?: string }} Config */
 
 /** @type {FeatureCollection} */
 const EMPTY_FC = { type: "FeatureCollection", features: [] };
 
-/** @typedef {{ maptiler_api_key: string, tags: Tag[], min_time?: string, max_time?: string }} Config */
-
 function App() {
-  const [config, setConfig] = useState(
-    /** @type {Config | undefined} */ (undefined),
-  );
-  useEffect(() => {
-    (async () => {
-      /** @type {Config} */
-      const config = await (await fetch("/config")).json();
-      setConfig(config);
-    })();
-  }, []);
-
-  const [now, setNow] = useState(/** @type {Now | undefined} */ (undefined));
-  useEffect(() => {
-    (async () => {
-      const resp = await fetch("/now");
-      if (!resp.ok) return;
-      /** @type {Now} */
-      const now = await resp.json();
-      setNow(now);
-    })();
-  }, []);
-
-  /** @type {React.RefObject<AbortController | null>} */
-  const controllerRef = useRef(null);
-
   const lat = useHash("lt", Number, 51.5);
   const lng = useHash("lg", Number, 0);
   const zoom = useHash("z", Number, 2);
@@ -61,71 +30,19 @@ function App() {
   const start = useHash("s", String);
   const end = useHash("e", String);
   const gran = useHash("g", String, BUCKETS[0].label);
-  const [geojson, setGeojson] = useState(EMPTY_FC);
-  const [histogram, setHistogram] = useState(/** @type {Bucket[]} */ ([]));
-  /** @type {React.RefObject<MapLibreMap | null>} */
-  const mapRef = useRef(null);
 
-  const loadGeojson = async (
-    /** @type {URLSearchParams} */ params,
-    /** @type {AbortSignal} */ signal,
-  ) => {
-    try {
-      const resp = await fetch(`/geojson/history?${params}`, { signal });
-      const text = await resp.text();
-      const trimmed = text.trim();
-      const features = trimmed
-        ? JSON.parse("[" + trimmed.replaceAll("\n", ",") + "]")
-        : [];
-      setGeojson({ type: "FeatureCollection", features });
-    } catch (/** @type {any} */ e) {
-      if (e.name !== "AbortError") throw e;
-    }
-  };
+  /** @type {Config | undefined} */
+  const config = useFetch("/config", parseJSON);
+  /** @type {NowResp | undefined} */
+  const now = useFetch("/now", parseJSON);
 
-  const loadHistogram = async (
-    /** @type {URLSearchParams} */ params,
-    /** @type {AbortSignal} */ signal,
-  ) => {
-    try {
-      const resp = await fetch(`/histogram/history?${params}`, { signal });
-      setHistogram(await resp.json());
-    } catch (/** @type {any} */ e) {
-      if (e.name !== "AbortError") throw e;
-    }
-  };
+  const { geoJSON, histogram, captureViewport } = useMapData({
+    start,
+    end,
+    gran,
+  });
 
-  const loadData = (/** @type {MapLibreMap} */ map) => {
-    if (controllerRef.current) controllerRef.current.abort();
-    controllerRef.current = new AbortController();
-    const { signal } = controllerRef.current;
-
-    const bounds = map.getBounds();
-    const params = new URLSearchParams({
-      west: String(bounds.getWest()),
-      south: String(bounds.getSouth()),
-      east: String(bounds.getEast()),
-      north: String(bounds.getNorth()),
-    });
-
-    const geoParams = new URLSearchParams(params);
-    geoParams.set("zoom", String(map.getZoom()));
-    if (start) geoParams.set("start", start);
-    if (end) geoParams.set("end", end);
-
-    const bucket = BUCKETS.find((b) => b.label === gran) ?? BUCKETS[0];
-    const histParams = new URLSearchParams(params);
-    histParams.set("fmt", bucket.fmt);
-
-    loadGeojson(geoParams, signal);
-    loadHistogram(histParams, signal);
-  };
-
-  useEffect(() => {
-    if (mapRef.current) loadData(mapRef.current);
-  }, [start, end, gran]);
-
-  const onMoveEnd = (/** @type {ViewStateChangeEvent} */ e) => {
+  const syncMap = (/** @type {MapLibreEvent} */ e) => {
     const m = e.target;
     const c = m.getCenter();
     setHash({
@@ -135,33 +52,21 @@ function App() {
       b: Math.abs(m.getBearing()) > 0.1 ? m.getBearing().toFixed(1) : undefined,
       p: Math.abs(m.getPitch()) > 0.1 ? m.getPitch().toFixed(1) : undefined,
     });
-    loadData(m);
+    captureViewport(m);
   };
-  const onLoad = (/** @type {MapLibreEvent} */ e) => loadData(e.target);
 
-  const [hiddenTags, setHiddenTags] = useState(
-    /** @type {Set<number>} */ (new Set()),
+  const [historySlot, setHistorySlot] = useState(
+    /** @type {HTMLDivElement | null} */ (null),
   );
-  const toggleTag = (/** @type {number} */ id) =>
-    setHiddenTags((prev) => {
-      const next = new Set(prev);
-      if (next.has(id)) next.delete(id);
-      else next.add(id);
-      return next;
-    });
-
-  const nowIsRecent = now
-    ? Date.now() - new Date(now.history.time).getTime() < 20 * 60 * 1000
-    : false;
-
-  const tags = config?.tags ?? [];
-  const [blend, setBlend] = useState(0.25); // 0 = frequent, 1 = explore
-  const [historyVisible, setHistoryVisible] = useState(true);
-  const [nowVisible, setNowVisible] = useState(true);
+  const [tagsSlot, setTagsSlot] = useState(
+    /** @type {HTMLDivElement | null} */ (null),
+  );
+  const [nowSlot, setNowSlot] = useState(
+    /** @type {HTMLDivElement | null} */ (null),
+  );
 
   return html`
     <${Map}
-      ref=${mapRef}
       initialViewState=${{
         latitude: lat,
         longitude: lng,
@@ -169,140 +74,181 @@ function App() {
         bearing,
         pitch,
       }}
-      onMoveEnd=${onMoveEnd}
-      onLoad=${onLoad}
+      onIdle=${syncMap}
       class="size-full"
       mapStyle=${config
         ? `https://api.maptiler.com/maps/basic/style.json?key=${config.maptiler_api_key}`
         : undefined}
     >
-      <${Source} id="history" type="geojson" data=${geojson}>
-        <${Layer}
-          id="frequent"
-          type="heatmap"
-          filter=${["!", ["has", "tag_id"]]}
-          layout=${{ visibility: historyVisible ? "visible" : "none" }}
-          paint=${frequentPaint(blend)}
-        />
-        <${Layer}
-          id="explore"
-          type="circle"
-          filter=${["!", ["has", "tag_id"]]}
-          layout=${{ visibility: historyVisible ? "visible" : "none" }}
-          paint=${explorePaint(blend)}
-        />
-        ${tags.map(
-          (t) => html`
-            <${Layer}
-              key=${`tag-${t.id}`}
-              id=${`tag-${t.id}`}
-              type="circle"
-              filter=${["==", ["get", "tag_id"], t.id]}
-              layout=${{
-                visibility: hiddenTags.has(t.id) ? "none" : "visible",
-              }}
-              paint=${taggedPaint(t.colour)}
-            />
-          `,
-        )}
+      <${Source} id="history" type="geojson" data=${geoJSON}>
+        <${History} slot=${historySlot} />
+        <${Tags} tags=${config?.tags ?? []} slot=${tagsSlot} />
       <//>
-      ${now &&
-      html`
-        <${Source}
-          id="now"
-          type="geojson"
-          data=${{
-            type: "FeatureCollection",
-            features: [
-              {
-                type: "Feature",
-                geometry: {
-                  type: "Point",
-                  coordinates: [now.history.longitude, now.history.latitude],
-                },
-              },
-            ],
-          }}
-        >
-          <${Layer}
-            id="now"
-            type="circle"
-            layout=${{ visibility: nowVisible ? "visible" : "none" }}
-            paint=${{
-              "circle-radius": 8,
-              "circle-color": "#3b82f6",
-              "circle-opacity": nowIsRecent ? 0.9 : 0.4,
-              "circle-stroke-color": "#ffffff",
-              "circle-stroke-width": 2,
-              "circle-stroke-opacity": nowIsRecent ? 1 : 0.5,
-            }}
-          />
-        <//>
-      `}
+      <${Now} now=${now} slot=${nowSlot} />
     <//>
-    ${now &&
-    html`<${LastSeen}
-      time=${now.history.time}
-      speed=${now.history.speed}
-      altitude=${now.history.altitude}
-      city=${now.city}
-      recent=${nowIsRecent}
-    />`}
     <div
       class="absolute bottom-4 left-4 right-4 z-10 flex flex-col gap-2 max-w-sm"
     >
-      <${Histogram}
-        data=${histogram}
-        selectedStart=${start}
-        selectedEnd=${end}
-        gran=${gran}
-        setGran=${(/** @type {string} */ g) =>
-          setHash({
-            g: g === BUCKETS[0].label ? undefined : g,
-            s: undefined,
-            e: undefined,
-          })}
-        onClear=${() => setHash({ s: undefined, e: undefined })}
-        onToggle=${(
-          /** @type {string} */ s,
-          /** @type {string | undefined} */ e,
-          /** @type {boolean} */ extend,
-        ) => {
-          if (extend && start) {
-            const newS = s < start ? s : start;
-            const newE =
-              end === undefined || e === undefined
-                ? undefined
-                : e > end
-                  ? e
-                  : end;
-            setHash({ s: newS, e: newE });
-            return;
-          }
-          const sel = start === s;
-          setHash({
-            s: sel ? undefined : s,
-            e: sel ? undefined : e,
-          });
-        }}
-      />
-      <${LayerControls}
-        blend=${blend}
-        setBlend=${setBlend}
-        historyVisible=${historyVisible}
-        setHistoryVisible=${setHistoryVisible}
-        tags=${tags}
-        hiddenTags=${hiddenTags}
-        toggleTag=${toggleTag}
-        hasNow=${!!now}
-        nowVisible=${nowVisible}
-        setNowVisible=${setNowVisible}
-      />
+      <${Histogram} data=${histogram} start=${start} end=${end} gran=${gran} />
+      <${Panel} class="px-3 py-2 min-w-40">
+        <div ref=${setHistorySlot} />
+        <div ref=${setNowSlot} />
+        <div ref=${setTagsSlot} />
+      <//>
     </div>
   `;
 }
 
-/** @param {{ time: string, speed: number, altitude: number, city?: City, recent: boolean }} props */
+/** @param {{ slot: HTMLElement | null }} props */
+function History({ slot }) {
+  const [visible, setVisible] = useState(true);
+  const [blend, setBlend] = useState(0.25); // 0 = frequent, 1 = explore
+
+  const dim = `text-xs ${visible ? "text-gray-500" : "text-gray-300"}`;
+
+  return html`<${React.Fragment}>
+    <${Layer}
+      id="frequent"
+      source="history"
+      type="heatmap"
+      filter=${["!", ["has", "tag_id"]]}
+      layout=${visibility(visible)}
+      paint=${frequentPaint(blend)}
+    />
+    <${Layer}
+      id="explore"
+      source="history"
+      type="circle"
+      filter=${["!", ["has", "tag_id"]]}
+      layout=${visibility(visible)}
+      paint=${explorePaint(blend)}
+    />
+    ${slot &&
+    createPortal(
+      html`<${React.Fragment}>
+        <${ToggleRow}
+          checked=${visible}
+          onChange=${() => setVisible(!visible)}
+          swatch=${html`<${Swatch}
+            style=${{
+              background:
+                "conic-gradient(#2563eb, #34d399, #facc15, #ef4444, #2563eb)",
+            }}
+          />`}
+          label="History"
+        />
+        <div class="flex items-center gap-2 pb-1 pl-1">
+          <span class=${dim}>Frequent</span>
+          <input
+            class="flex-1"
+            type="range"
+            min="0"
+            max="1"
+            step="0.05"
+            value=${blend}
+            disabled=${!visible}
+            onInput=${(/** @type {Event & { target: HTMLInputElement }} */ e) =>
+              setBlend(parseFloat(e.target.value))}
+          />
+          <span class=${dim}>Explore</span>
+        </div>
+      <//>`,
+      slot,
+    )}
+  <//>`;
+}
+
+/** @param {{ tags: TagResp[], slot: HTMLElement | null }} props */
+function Tags({ tags, slot }) {
+  const [hidden, setHidden] = useState(/** @type {Set<number>} */ (new Set()));
+  const toggle = (/** @type {number} */ id) =>
+    setHidden((prev) => {
+      const next = new Set(prev);
+      if (next.has(id)) next.delete(id);
+      else next.add(id);
+      return next;
+    });
+
+  return html`<${React.Fragment}>
+    ${tags.map(
+      (t) => html`
+        <${Layer}
+          key=${`tag-${t.id}`}
+          id=${`tag-${t.id}`}
+          source="history"
+          type="circle"
+          filter=${["==", ["get", "tag_id"], t.id]}
+          layout=${visibility(!hidden.has(t.id))}
+          paint=${taggedPaint(t.colour)}
+        />
+      `,
+    )}
+    ${slot &&
+    tags.length > 0 &&
+    createPortal(
+      html`<${React.Fragment}>
+        ${tags.map(
+          (t) => html`
+            <${ToggleRow}
+              key=${t.id}
+              checked=${!hidden.has(t.id)}
+              onChange=${() => toggle(t.id)}
+              swatch=${t.colour &&
+              html`<${Swatch} style=${{ backgroundColor: t.colour }} />`}
+              label=${`Tag ${t.name}`}
+            />
+          `,
+        )}
+      <//>`,
+      slot,
+    )}
+  <//>`;
+}
+
+/** @param {{ now: NowResp | undefined, slot: HTMLElement | null }} props */
+function Now({ now, slot }) {
+  const [visible, setVisible] = useState(true);
+  if (!now) return null;
+
+  const recent =
+    Date.now() - new Date(now.history.time).getTime() < 20 * 60 * 1000;
+
+  return html`<${React.Fragment}>
+    ${visible &&
+    html`<${Marker}
+      longitude=${now.history.longitude}
+      latitude=${now.history.latitude}
+    >
+      <div class="inline-flex rounded-full ring-2 ring-white shadow-md">
+        ${recent
+          ? html`<${PulseDot} class="size-3" />`
+          : html`<span class="block size-3 rounded-full bg-blue-500/50" />`}
+      </div>
+    <//>`}
+    ${createPortal(
+      html`<${LastSeen}
+        time=${now.history.time}
+        speed=${now.history.speed}
+        altitude=${now.history.altitude}
+        city=${now.city}
+        recent=${recent}
+      />`,
+      document.body,
+    )}
+    ${slot &&
+    createPortal(
+      html`<${ToggleRow}
+        checked=${visible}
+        onChange=${() => setVisible(!visible)}
+        swatch=${html`<${Swatch} class="bg-blue-500" />`}
+        label="Now"
+      />`,
+      slot,
+    )}
+  <//>`;
+}
+
+/** @param {{ time: string, speed: number, altitude: number, city?: CityResp, recent: boolean }} props */
 function LastSeen({ time, speed, altitude, city, recent }) {
   const [ago, setAgo] = useState("");
   useEffect(() => {
@@ -321,61 +267,66 @@ function LastSeen({ time, speed, altitude, city, recent }) {
   if (altitude > 0) parts.push(`${Math.round(altitude)} m`);
 
   return html`
-    <div
-      class="absolute top-4 left-1/2 -translate-x-1/2 z-10 bg-white/90 rounded-lg shadow px-3 py-1.5 text-xs font-sans select-none whitespace-nowrap flex items-center gap-1.5"
+    <${Panel}
+      class="absolute top-4 left-1/2 -translate-x-1/2 z-10 px-3 py-1.5 whitespace-nowrap flex items-center gap-1.5"
     >
-      ${recent &&
-      html`
-        <span class="relative flex size-2.5">
-          <span
-            class="animate-ping absolute inline-flex size-full rounded-full bg-blue-400 opacity-75"
-          />
-          <span
-            class="relative inline-flex size-2.5 rounded-full bg-blue-500"
-          />
-        </span>
-      `}
+      ${recent && html`<${PulseDot} />`}
       <span>${parts.join(" · ")}</span>
-    </div>
+    <//>
   `;
 }
 
-/** @param {{ data: Bucket[], selectedStart: string | undefined, selectedEnd: string | undefined, gran: string, setGran: (g: string) => void, onToggle: (start: string, end: string | undefined, extend: boolean) => void, onClear: () => void }} props */
-function Histogram({
-  data,
-  selectedStart,
-  selectedEnd,
-  gran,
-  setGran,
-  onToggle,
-  onClear,
-}) {
+/** @param {{ data: BucketResp[], start: string | undefined, end: string | undefined, gran: string }} props */
+function Histogram({ data, start, end, gran }) {
   const max = data.length ? Math.max(...data.map((d) => d.count)) : 0;
 
-  const selectedBars = data.filter(
-    (d) =>
-      selectedStart !== undefined &&
-      d.start >= selectedStart &&
-      (selectedEnd === undefined || d.start < selectedEnd),
-  );
+  const isSelected = (/** @type {string} */ bucket) =>
+    start !== undefined &&
+    bucket >= start &&
+    (end === undefined || bucket < end);
+
+  const selectedBars = data.filter((d) => isSelected(d.start));
   const rangeLabel =
     selectedBars.length > 1
       ? `${selectedBars[0].start} – ${selectedBars[selectedBars.length - 1].start}`
       : selectedBars.length === 1
         ? selectedBars[0].start
-        : selectedStart;
+        : start;
+
+  const changeGran = (/** @type {string} */ g) =>
+    setHash({
+      g: g === BUCKETS[0].label ? undefined : g,
+      s: undefined,
+      e: undefined,
+    });
+
+  const clear = () => setHash({ s: undefined, e: undefined });
+
+  const toggleRange = (
+    /** @type {string} */ s,
+    /** @type {string | undefined} */ e,
+    /** @type {boolean} */ extend,
+  ) => {
+    if (extend && start) {
+      const newS = s < start ? s : start;
+      const newE =
+        end === undefined || e === undefined ? undefined : e > end ? e : end;
+      setHash({ s: newS, e: newE });
+      return;
+    }
+    const sel = start === s;
+    setHash({ s: sel ? undefined : s, e: sel ? undefined : e });
+  };
 
   return html`
-    <div
-      class="bg-white/90 rounded-lg shadow px-3 py-2 text-xs font-sans select-none"
-    >
+    <${Panel} class="px-3 py-2">
       <div class="flex justify-between items-center gap-1 mb-1">
         <div>
-          ${selectedStart !== undefined &&
+          ${start !== undefined &&
           html`
             <button
               class="flex items-center gap-1 px-1.5 rounded bg-blue-600 text-white hover:bg-blue-700"
-              onClick=${onClear}
+              onClick=${clear}
             >
               <span>${rangeLabel}</span>
               <span class="text-white/70">✕</span>
@@ -389,7 +340,7 @@ function Histogram({
               <button
                 key=${b.label}
                 class=${`px-1.5 rounded ${gran === b.label ? "bg-blue-600 text-white" : "bg-gray-200 text-gray-700 hover:bg-gray-300"}`}
-                onClick=${() => setGran(b.label)}
+                onClick=${() => changeGran(b.label)}
               >
                 ${b.label}
               </button>
@@ -399,11 +350,9 @@ function Histogram({
       </div>
       <div class="flex gap-0.5 h-20 overflow-x-auto overflow-y-hidden">
         ${data.flatMap((d, i) => {
-          const selected =
-            selectedStart !== undefined &&
-            d.start >= selectedStart &&
-            (selectedEnd === undefined || d.start < selectedEnd);
-          const dimmed = selectedStart !== undefined && !selected;
+          const after = data[i + 1];
+          const selected = isSelected(d.start);
+          const dimmed = start !== undefined && !selected;
           const barColour = selected
             ? "bg-blue-600"
             : dimmed
@@ -419,7 +368,7 @@ function Histogram({
               key=${d.start}
               class="flex-1 flex flex-col cursor-pointer min-w-10 hover:opacity-80"
               onClick=${(/** @type {MouseEvent} */ ev) =>
-                onToggle(d.start, data[i + 1]?.start, ev.shiftKey)}
+                toggleRange(d.start, after?.start, ev.shiftKey)}
               title=${`${d.start}: ${d.count.toLocaleString()}`}
             >
               <div class="flex-1 flex items-end">
@@ -438,7 +387,6 @@ function Histogram({
               </div>
             </div>
           `;
-          const after = data[i + 1];
           if (after && nextStart(d.start) !== after.start) {
             return [
               bar,
@@ -448,102 +396,56 @@ function Histogram({
           return [bar];
         })}
       </div>
+    <//>
+  `;
+}
+
+/** @param {{ class?: string, children?: React.ReactNode }} props */
+function Panel({ class: className, children }) {
+  return html`
+    <div
+      class=${`bg-white/90 rounded-lg shadow text-xs font-sans select-none ${className ?? ""}`}
+    >
+      ${children}
     </div>
   `;
 }
 
-/**
- * @param {{ blend: number, setBlend: (v: number) => void, historyVisible: boolean, setHistoryVisible: (v: boolean) => void, tags: Tag[], hiddenTags: Set<number>, toggleTag: (id: number) => void, hasNow: boolean, nowVisible: boolean, setNowVisible: (v: boolean) => void }} props
- */
-function LayerControls({
-  blend,
-  setBlend,
-  historyVisible,
-  setHistoryVisible,
-  tags,
-  hiddenTags,
-  toggleTag,
-  hasNow,
-  nowVisible,
-  setNowVisible,
-}) {
+/** @param {{ class?: string, style?: React.CSSProperties }} props */
+function Swatch({ class: className, style }) {
+  return html`<span
+    class=${`shrink-0 size-2.5 rounded-full ${className ?? ""}`}
+    style=${style}
+  />`;
+}
+
+/** @param {{ class?: string }} props */
+function PulseDot({ class: className }) {
   return html`
-    <div
-      class="bg-white/90 rounded-lg shadow px-3 py-2 text-xs font-sans select-none min-w-40"
-    >
-      <div class="flex items-center gap-2 py-1">
-        <input
-          type="checkbox"
-          checked=${historyVisible}
-          onChange=${() => setHistoryVisible(!historyVisible)}
-        />
-        <span
-          class="shrink-0 size-2.5 rounded-full"
-          style=${{
-            background:
-              "conic-gradient(#2563eb, #34d399, #facc15, #ef4444, #2563eb)",
-          }}
-        />
-        <span class="text-xs">History</span>
-      </div>
-      <div class="flex items-center gap-2 pb-1 pl-1">
-        <span
-          class=${`text-xs ${historyVisible ? "text-gray-500" : "text-gray-300"}`}
-        >
-          Frequent
-        </span>
-        <input
-          class="flex-1"
-          type="range"
-          min="0"
-          max="1"
-          step="0.05"
-          value=${blend}
-          disabled=${!historyVisible}
-          onInput=${(/** @type {Event & { target: HTMLInputElement }} */ e) =>
-            setBlend(parseFloat(e.target.value))}
-        />
-        <span
-          class=${`text-xs ${historyVisible ? "text-gray-500" : "text-gray-300"}`}
-        >
-          Explore
-        </span>
-      </div>
-      ${hasNow &&
-      html`
-        <div class="flex items-center gap-2 py-1">
-          <input
-            type="checkbox"
-            checked=${nowVisible}
-            onChange=${() => setNowVisible(!nowVisible)}
-          />
-          <span class="shrink-0 size-2.5 rounded-full bg-blue-500" />
-          <span class="text-xs">Now</span>
-        </div>
-      `}
-      ${tags.length > 0 && html`<hr class="my-1 border-gray-300" />`}
-      ${tags.map(
-        (t) => html`
-          <div key=${t.id} class="flex items-center gap-2 py-1">
-            <input
-              type="checkbox"
-              checked=${!hiddenTags.has(t.id)}
-              onChange=${() => toggleTag(t.id)}
-            />
-            ${t.colour &&
-            html`<span
-              class="shrink-0 size-2.5 rounded-full"
-              style=${{ backgroundColor: t.colour }}
-            />`}
-            <span class="text-xs">${t.name}</span>
-          </div>
-        `,
-      )}
+    <span class=${`relative flex ${className ?? "size-2.5"}`}>
+      <span
+        class="animate-ping absolute inline-flex size-full rounded-full bg-blue-400 opacity-75"
+      />
+      <span class="relative inline-flex size-full rounded-full bg-blue-500" />
+    </span>
+  `;
+}
+
+/** @param {{ checked: boolean, onChange: () => void, swatch?: React.ReactNode, label: string }} props */
+function ToggleRow({ checked, onChange, swatch, label }) {
+  return html`
+    <div class="flex items-center gap-2 py-1">
+      <input type="checkbox" checked=${checked} onChange=${onChange} />
+      ${swatch}
+      <span class="text-xs">${label}</span>
     </div>
   `;
 }
 
 ReactDOM.createRoot(document.body).render(html`<${App} />`);
+
+/** @param {boolean} visible */
+const visibility = (visible) => ({ visibility: visible ? "visible" : "none" });
 
 const BASE_OPACITY = [0.9, 0.7, 0.5];
 
@@ -590,6 +492,91 @@ const taggedPaint = (/** @type {string} */ colour) => ({
 
 /**
  * @template T
+ * @param {string | null} url - falsy skips the request
+ * @param {(resp: Response) => Promise<T>} parse
+ * @returns {T | undefined}
+ */
+function useFetch(url, parse) {
+  const [data, setData] = useState(/** @type {T | undefined} */ (undefined));
+  useEffect(() => {
+    if (!url) return;
+    const controller = new AbortController();
+    fetchAborting(url, controller.signal, async (resp) => {
+      if (resp.ok) setData(await parse(resp));
+    });
+    return () => controller.abort();
+  }, [url]);
+  return data;
+}
+
+/** @param {{ start?: string, end?: string, gran?: string }} filters */
+function useMapData({ start, end, gran }) {
+  const [viewport, setViewport] = useState(
+    /** @type {{ bounds: LngLatBounds, zoom: number } | null} */ (null),
+  );
+
+  const captureViewport = (/** @type {MapLibreMap} */ map) =>
+    setViewport({ bounds: map.getBounds(), zoom: map.getZoom() });
+
+  let geoUrl = /** @type {string | null} */ (null);
+  let histUrl = /** @type {string | null} */ (null);
+  if (viewport) {
+    const params = new URLSearchParams({
+      west: String(viewport.bounds.getWest()),
+      south: String(viewport.bounds.getSouth()),
+      east: String(viewport.bounds.getEast()),
+      north: String(viewport.bounds.getNorth()),
+    });
+
+    const geoParams = new URLSearchParams(params);
+    geoParams.set("zoom", String(viewport.zoom));
+    if (start) geoParams.set("start", start);
+    if (end) geoParams.set("end", end);
+
+    geoUrl = `/geojson/history?${geoParams}`;
+
+    const bucket = BUCKETS.find((b) => b.label === gran) ?? BUCKETS[0];
+    const histParams = new URLSearchParams(params);
+    histParams.set("fmt", bucket.fmt);
+
+    histUrl = `/histogram/history?${histParams}`;
+  }
+
+  const geoJSON = useFetch(geoUrl, parseGeoJSON) ?? EMPTY_FC;
+  /** @type {BucketResp[]} */
+  const histogram = useFetch(histUrl, parseJSON) ?? [];
+
+  return { geoJSON, histogram, captureViewport };
+}
+
+/** @param {Response} resp @returns {Promise<FeatureCollection>} */
+async function parseGeoJSON(resp) {
+  const trimmed = (await resp.text()).trim();
+  const features = trimmed
+    ? JSON.parse("[" + trimmed.replaceAll("\n", ",") + "]")
+    : [];
+  return { type: "FeatureCollection", features };
+}
+
+/** @param {Response} resp */
+const parseJSON = (resp) => resp.json();
+
+/**
+ * @param {string} url
+ * @param {AbortSignal} signal
+ * @param {(resp: Response) => Promise<void>} handle
+ */
+async function fetchAborting(url, signal, handle) {
+  try {
+    await handle(await fetch(url, { signal }));
+  } catch (e) {
+    if (e instanceof DOMException && e.name === "AbortError") return;
+    throw e;
+  }
+}
+
+/**
+ * @template T
  * @param {string} key
  * @param {(v: string) => T} parse
  * @param {T} [initial]
@@ -606,7 +593,7 @@ function useHash(key, parse, initial) {
   return raw !== undefined ? parse(raw) : initial;
 }
 
-/** @param {Record<string, any>} params - falsy values remove the key */
+/** @param {Record<string, string | undefined>} params - falsy values remove the key */
 function setHash(params) {
   const h = { ...parseHash(), ...params };
   for (const k of Object.keys(h)) if (!h[k]) delete h[k];
