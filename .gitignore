@@ -2,7 +2,6 @@ go.work
 go.work.sum
 lochis
 *.db
-!cities.db
 
 node_modules
 package.json
