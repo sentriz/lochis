@@ -4,7 +4,8 @@
   "type": "module",
   "scripts": {
     "build": "esbuild lochis.tsx --bundle --format=esm --jsx=automatic --minify --outdir=dist && tailwindcss -i lochis.css -o dist/lochis.css --minify && cp node_modules/maplibre-gl/dist/maplibre-gl.css dist/maplibre-gl.css",
-    "typecheck": "tsc --noEmit"
+    "check-types": "tsc --noEmit",
+    "check-formatting": "prettier --check $(git ls-files | grep -E '.(ts|tsx|js|json)$')"
   },
   "dependencies": {
     "@vis.gl/react-maplibre": "^8.0.0",
@@ -17,6 +18,7 @@
     "@types/react": "^19.0.0",
     "@types/react-dom": "^19.0.0",
     "esbuild": "^0.25.0",
+    "prettier": "^3.8.3",
     "tailwindcss": "^4.3.0",
     "typescript": "^5.9.0"
   }
