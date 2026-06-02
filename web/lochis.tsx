@@ -1,5 +1,5 @@
 import { useState, useEffect, useSyncExternalStore } from "react";
-import type { CSSProperties, ReactNode, FormEvent, MouseEvent } from "react";
+import type { CSSProperties, ReactNode, MouseEvent } from "react";
 import ReactDOM from "react-dom/client";
 import { createPortal } from "react-dom";
 import { Map, Source, Layer, Marker } from "@vis.gl/react-maplibre";
@@ -7,7 +7,6 @@ import type {
   MapLibreEvent,
   Map as MapLibreMap,
   LngLatBounds,
-  FilterSpecification,
   HeatmapLayerSpecification,
   CircleLayerSpecification,
 } from "maplibre-gl";
@@ -163,9 +162,7 @@ function History({ slot }: { slot: HTMLElement | null }) {
                 step="0.05"
                 value={blend}
                 disabled={!visible}
-                onInput={(e: FormEvent<HTMLInputElement>) =>
-                  setBlend(parseFloat(e.currentTarget.value))
-                }
+                onInput={(e) => setBlend(parseFloat(e.currentTarget.value))}
               />
               <span className={dim}>Explore</span>
             </div>
@@ -223,7 +220,13 @@ function Tags({ tags, slot }: { tags: TagResp[]; slot: HTMLElement | null }) {
   );
 }
 
-function Now({ now, slot }: { now: NowResp | undefined; slot: HTMLElement | null }) {
+function Now({
+  now,
+  slot,
+}: {
+  now: NowResp | undefined;
+  slot: HTMLElement | null;
+}) {
   const [visible, setVisible] = useState(true);
   if (!now) return null;
 
@@ -342,11 +345,7 @@ function Histogram({
 
   const clear = () => setHash({ s: undefined, e: undefined });
 
-  const toggleRange = (
-    s: string,
-    e: string | undefined,
-    extend: boolean,
-  ) => {
+  const toggleRange = (s: string, e: string | undefined, extend: boolean) => {
     if (extend && start) {
       const newS = s < start ? s : start;
       const newE =
