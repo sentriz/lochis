@@ -30,12 +30,14 @@ import (
 	"golang.org/x/tools/txtar"
 )
 
+//go:generate npm run build
+
 var (
 	//go:embed schema.sql
 	schema []byte
 	//go:embed cities
 	citiesDB []byte
-	//go:embed index.html lochis.js favicon.svg
+	//go:embed index.html favicon.svg dist
 	indexFS embed.FS
 )
 

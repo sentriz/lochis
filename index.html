@@ -5,29 +5,9 @@
     <link rel="icon" href="/favicon.svg" type="image/svg+xml" />
     <meta charset="utf-8" />
     <meta name="viewport" content="width=device-width, initial-scale=1, maximum-scale=1" />
-    <link
-      rel="stylesheet"
-      href="https://unpkg.com/maplibre-gl@5.0.1/dist/maplibre-gl.css"
-    />
-    <script src="https://cdn.tailwindcss.com"></script>
-    <script>
-      tailwind.config = {
-        content: ["/lochis.js"],
-      };
-    </script>
-    <script type="importmap">
-      {
-        "imports": {
-          "react": "https://esm.sh/react@19",
-          "react-dom": "https://esm.sh/react-dom@19",
-          "react-dom/client": "https://esm.sh/react-dom@19/client",
-          "htm": "https://esm.sh/htm@3",
-          "@vis.gl/react-maplibre": "https://esm.sh/*@vis.gl/react-maplibre@8?deps=maplibre-gl@5.0.1",
-          "maplibre-gl": "https://esm.sh/maplibre-gl@5.0.1"
-        }
-      }
-    </script>
-    <script type="module" src="/lochis.js"></script>
+    <link rel="stylesheet" href="/dist/maplibre-gl.css" />
+    <link rel="stylesheet" href="/dist/lochis.css" />
+    <script type="module" src="/dist/lochis.js"></script>
   </head>
   <body class="m-0 p-0 h-dvh relative"></body>
 </html>
