@@ -6,7 +6,6 @@ import (
 	"context"
 	"crypto/subtle"
 	"database/sql"
-	"embed"
 	"encoding/csv"
 	"encoding/json"
 	"errors"
@@ -22,23 +21,22 @@ import (
 	"strconv"
 	"time"
 
+	_ "embed"
+
 	_ "github.com/ncruces/go-sqlite3/driver"
 	"github.com/ncruces/go-sqlite3/util/ioutil"
 	"github.com/ncruces/go-sqlite3/vfs/readervfs"
 	"go.senan.xyz/flagconf"
+	"go.senan.xyz/lochis/web"
 	"go.senan.xyz/sqlb"
 	"golang.org/x/tools/txtar"
 )
-
-//go:generate npm run build
 
 var (
 	//go:embed schema.sql
 	schema []byte
 	//go:embed cities
 	citiesDB []byte
-	//go:embed index.html favicon.svg dist
-	indexFS embed.FS
 )
 
 func main() {
@@ -261,7 +259,7 @@ func main() {
 		}
 	})
 
-	mux.Handle("GET /", http.FileServer(http.FS(indexFS)))
+	mux.Handle("GET /", http.FileServer(http.FS(web.FS)))
 
 	var handler http.Handler = mux
 	handler = authMiddleware(handler, *apiKey)

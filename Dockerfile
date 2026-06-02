@@ -1,9 +1,9 @@
 # syntax=docker/dockerfile:1
 FROM --platform=$BUILDPLATFORM node:22-alpine AS assets
 WORKDIR /src
-COPY package.json package-lock.json ./
+COPY web/package.json web/package-lock.json ./
 RUN --mount=type=cache,target=/root/.npm npm ci
-COPY lochis.js lochis.css index.html ./
+COPY web/lochis.tsx web/lochis.css web/index.html ./
 RUN npm run build
 
 FROM --platform=$BUILDPLATFORM golang:1.26-alpine3.23 AS builder
@@ -13,7 +13,7 @@ WORKDIR /src
 COPY go.mod go.sum ./
 RUN go mod download
 COPY . .
-COPY --from=assets /src/dist ./dist
+COPY --from=assets /src/dist ./web/dist
 RUN  \
     --mount=type=cache,target=/go/pkg/mod \
     --mount=type=cache,target=/root/.cache/go-build \
