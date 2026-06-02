@@ -4,4 +4,5 @@ lochis
 *.db
 
 node_modules
-dist
+web/dist/*
+!web/dist/keep
