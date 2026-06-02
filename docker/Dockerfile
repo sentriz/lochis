@@ -23,6 +23,6 @@ FROM alpine:3.22
 LABEL org.opencontainers.image.source=https://github.com/sentriz/lochis
 RUN apk add -U --no-cache su-exec
 COPY --from=builder /out/* /usr/local/bin/
-COPY docker-entry /
+COPY docker/docker-entry /
 ENTRYPOINT ["/docker-entry"]
 CMD ["lochis"]
