@@ -101,24 +101,10 @@ func main() {
 		ctx := r.Context()
 		params := r.URL.Query()
 
-		south, _ := strconv.ParseFloat(params.Get("south"), 64)
-		north, _ := strconv.ParseFloat(params.Get("north"), 64)
-		west, _ := strconv.ParseFloat(params.Get("west"), 64)
-		east, _ := strconv.ParseFloat(params.Get("east"), 64)
-		zoom, _ := strconv.ParseFloat(params.Get("zoom"), 64)
-
 		q := sqlb.NewQuery("select avg(latitude) as lat, avg(longitude) as lng, avg(altitude) as alt, count(*) as weight, coalesce(tag_id, 0) as tag_id from history where 1")
-		q.Append("and latitude between ? and ?", south, north)
-		q.Append("and longitude between ? and ?", west, east)
-		q.Append("and altitude < ?", 3000)
+		q.Append("and ?", historyViewportFilter(params))
 
-		// cast to text: the column has NUMERIC affinity, so '2024' would coerce to an int and TEXT > number is always true
-		if v := params.Get("start"); v != "" {
-			q.Append("and cast(time as text) >= ?", v)
-		}
-		if v := params.Get("end"); v != "" {
-			q.Append("and cast(time as text) <= ?", v)
-		}
+		zoom, _ := strconv.ParseFloat(params.Get("zoom"), 64)
 
 		gridSize := 3.6 / math.Pow(2, zoom)
 		q.Append("group by round(latitude / ?), round(longitude / ?), tag_id", gridSize, gridSize)
@@ -144,17 +130,10 @@ func main() {
 		ctx := r.Context()
 		params := r.URL.Query()
 
-		south, _ := strconv.ParseFloat(params.Get("south"), 64)
-		north, _ := strconv.ParseFloat(params.Get("north"), 64)
-		west, _ := strconv.ParseFloat(params.Get("west"), 64)
-		east, _ := strconv.ParseFloat(params.Get("east"), 64)
-
 		groupFmt := cmp.Or(params.Get("fmt"), "%Y")
 
 		q := sqlb.NewQuery("select strftime(?, time) as start, count(*) as count from history where 1", groupFmt)
-		q.Append("and latitude between ? and ?", south, north)
-		q.Append("and longitude between ? and ?", west, east)
-		q.Append("and altitude < ?", 3000)
+		q.Append("and ?", historyViewportFilter(params))
 		q.Append("group by start order by start")
 		// no time filter, histogram always shows full range so users can switch buckets
 
@@ -400,6 +379,28 @@ func importData(ctx context.Context, db *sql.DB, src io.Reader) error {
 	}
 
 	return nil
+}
+
+func historyViewportFilter(params url.Values) sqlb.Query {
+	south, _ := strconv.ParseFloat(params.Get("south"), 64)
+	north, _ := strconv.ParseFloat(params.Get("north"), 64)
+	west, _ := strconv.ParseFloat(params.Get("west"), 64)
+	east, _ := strconv.ParseFloat(params.Get("east"), 64)
+
+	q := sqlb.NewQuery("1")
+	q.Append("and latitude between ? and ?", south, north)
+	q.Append("and longitude between ? and ?", west, east)
+	q.Append("and altitude < ?", 3000)
+
+	// cast to text: the column has NUMERIC affinity, so '2024' would coerce to an int and TEXT > number is always true
+	if v := params.Get("start"); v != "" {
+		q.Append("and cast(time as text) >= ?", v)
+	}
+	if v := params.Get("end"); v != "" {
+		q.Append("and cast(time as text) <= ?", v)
+	}
+
+	return q
 }
 
 const cookieKey = "api-key"
