@@ -529,9 +529,12 @@ const visibility = (visible: boolean) => ({
 
 const BASE_OPACITY = [0.9, 0.7, 0.5];
 
+// equal-power gain so the two layers don't both dip to half at the midpoint
+const equalPower = (t: number) => Math.sin((t * Math.PI) / 2);
+
 // prettier-ignore
 const frequentPaint = (blend: number): HeatmapLayerSpecification["paint"] => ({
-  "heatmap-opacity": ["interpolate", ["linear"], ["zoom"], 0, BASE_OPACITY[0] * (1 - blend), 14, BASE_OPACITY[1] * (1 - blend), 18, BASE_OPACITY[2] * (1 - blend)],
+  "heatmap-opacity": ["interpolate", ["linear"], ["zoom"], 0, BASE_OPACITY[0] * equalPower(1 - blend), 14, BASE_OPACITY[1] * equalPower(1 - blend), 18, BASE_OPACITY[2] * equalPower(1 - blend)],
   "heatmap-weight": ["interpolate", ["exponential", 0.5], ["get", "weight"], 1, 0, 10, 0.03, 50, 0.15, 200, 0.4, 1000, 0.75, 10000, 1],
   "heatmap-intensity": ["interpolate", ["linear"], ["zoom"], 0, 2, 5, 2.5, 8, 2.5, 12, 3, 15, 3, 18, 5],
   "heatmap-radius": ["interpolate", ["linear"], ["zoom"], 0, 12, 5, 28, 10, 30, 14, 25, 16, 15, 18, 10],
@@ -548,7 +551,7 @@ const frequentPaint = (blend: number): HeatmapLayerSpecification["paint"] => ({
 
 // prettier-ignore
 const explorePaint = (blend: number): CircleLayerSpecification["paint"] => ({
-  "circle-opacity": blend,
+  "circle-opacity": equalPower(blend),
   "circle-color": ["interpolate", ["exponential", 0.5], ["get", "weight"], 1, "rgba(37, 99, 235, 0.3)", 10, "rgba(220, 38, 38, 0.8)", 50, "rgba(245, 158, 11, 0.7)", 200, "rgba(56, 189, 248, 0.4)", 1000, "rgba(37, 99, 235, 0.25)", 10000, "rgba(29, 78, 216, 0.1)"],
   "circle-radius": [
     "interpolate", ["linear"], ["zoom"],
