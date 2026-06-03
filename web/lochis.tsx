@@ -31,6 +31,7 @@ type CityResp = {
 };
 type NowResp = { history: HistoryResp; city?: CityResp };
 type BucketResp = { start: string; count: number };
+type StatsResp = { distance_km: number; points: number };
 type Config = {
   maptiler_api_key: string;
   tags: TagResp[];
@@ -53,7 +54,7 @@ function App() {
   const config = useFetch<Config>("/config", parseJSON);
   const now = useFetch<NowResp>("/now", parseJSON);
 
-  const { geoJSON, histogram, captureViewport } = useMapData({
+  const { geoJSON, histogram, stats, captureViewport } = useMapData({
     start,
     end,
     gran,
@@ -100,6 +101,20 @@ function App() {
         </Source>
         <Now now={now} slot={nowSlot} />
       </Map>
+      <Panel className="absolute top-4 right-4 z-10 px-3 py-2 flex divide-x divide-gray-200">
+        <Stat
+          label="Distance"
+          value={
+            stats === undefined
+              ? "…"
+              : `${Math.round(stats.distance_km).toLocaleString()} km`
+          }
+        />
+        <Stat
+          label="Points"
+          value={stats === undefined ? "…" : stats.points.toLocaleString()}
+        />
+      </Panel>
       <div className="absolute bottom-4 left-4 right-4 z-10 flex flex-col gap-2 max-w-sm">
         <Histogram data={histogram} start={start} end={end} gran={gran} />
         <Panel className="px-3 py-2 min-w-40">
@@ -453,6 +468,15 @@ function Panel({
   );
 }
 
+function Stat({ label, value }: { label: string; value: string }) {
+  return (
+    <div className="px-3 first:pl-0 last:pr-0">
+      <div className="text-gray-400">{label}</div>
+      <div className="tabular-nums text-gray-800">{value}</div>
+    </div>
+  );
+}
+
 function Swatch({
   className,
   style,
@@ -581,6 +605,7 @@ function useMapData({
 
   let geoUrl: string | null = null;
   let histUrl: string | null = null;
+  let statsUrl: string | null = null;
   if (viewport) {
     const params = new URLSearchParams({
       west: String(viewport.bounds.getWest()),
@@ -595,6 +620,7 @@ function useMapData({
     if (end) geoParams.set("end", end);
 
     geoUrl = `/geojson/history?${geoParams}`;
+    statsUrl = `/stats/history?${geoParams}`;
 
     const bucket = BUCKETS.find((b) => b.label === gran) ?? BUCKETS[0];
     const histParams = new URLSearchParams(params);
@@ -605,8 +631,9 @@ function useMapData({
 
   const geoJSON = useFetch(geoUrl, parseGeoJSON) ?? EMPTY_FC;
   const histogram = useFetch<BucketResp[]>(histUrl, parseJSON) ?? [];
+  const stats = useFetch<StatsResp>(statsUrl, parseJSON);
 
-  return { geoJSON, histogram, captureViewport };
+  return { geoJSON, histogram, stats, captureViewport };
 }
 
 async function parseGeoJSON(resp: Response): Promise<FeatureCollection> {

@@ -159,6 +159,49 @@ func main() {
 		}
 	})
 
+	mux.HandleFunc("GET /stats/history", func(w http.ResponseWriter, r *http.Request) {
+		ctx := r.Context()
+		params := r.URL.Query()
+
+		q := sqlb.NewQuery("select latitude, longitude from history where 1")
+		q.Append("and ?", historyViewportFilter(params))
+		q.Append("order by time")
+
+		// measure from the last accepted anchor so stationary jitter never advances it.
+		// tuned to GPS jitter radius (tens of metres), independent of sample rate
+		const minStepKm = 0.04
+
+		var distance float64
+		var count int
+		var anchorLat, anchorLng float64
+		var have bool
+		var lat, lng float64
+		for err := range sqlb.Each(ctx, db, sqlb.Scan(&lat, &lng), "?", q) {
+			if err != nil {
+				slog.ErrorContext(ctx, "scan history stats", "err", err)
+				continue
+			}
+			count++
+			if !have {
+				anchorLat, anchorLng, have = lat, lng, true
+				continue
+			}
+			if step := haversineKm(anchorLat, anchorLng, lat, lng); step >= minStepKm {
+				distance += step
+				anchorLat, anchorLng = lat, lng
+			}
+		}
+
+		resp := struct {
+			DistanceKm float64 `json:"distance_km"`
+			Points     int     `json:"points"`
+		}{distance, count}
+		if err := json.NewEncoder(w).Encode(resp); err != nil {
+			slog.ErrorContext(ctx, "encode", "err", err)
+			return
+		}
+	})
+
 	mux.HandleFunc("GET /config", func(w http.ResponseWriter, r *http.Request) {
 		config := Config{
 			MaptilerAPIKey: *maptilerAPIKey,
@@ -401,6 +444,16 @@ func historyViewportFilter(params url.Values) sqlb.Query {
 	}
 
 	return q
+}
+
+func haversineKm(lat1, lng1, lat2, lng2 float64) float64 {
+	const r = 6371.0 // earth radius km
+	const rad = math.Pi / 180
+	dLat := (lat2 - lat1) * rad
+	dLng := (lng2 - lng1) * rad
+	a := math.Sin(dLat/2)*math.Sin(dLat/2) +
+		math.Cos(lat1*rad)*math.Cos(lat2*rad)*math.Sin(dLng/2)*math.Sin(dLng/2)
+	return 2 * r * math.Asin(math.Sqrt(a))
 }
 
 const cookieKey = "api-key"
