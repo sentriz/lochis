@@ -318,7 +318,7 @@ function LastSeen({
   if (altitude > 0) parts.push(`${Math.round(altitude)} m`);
 
   return (
-    <Panel className="absolute top-4 left-1/2 -translate-x-1/2 z-10 px-3 py-1.5 whitespace-nowrap flex items-center gap-1.5">
+    <Panel className="absolute top-4 left-4 w-fit sm:inset-x-0 sm:mx-auto z-10 px-3 py-1.5 whitespace-nowrap flex items-center gap-1.5">
       {recent && <PulseDot />}
       <span>{parts.join(" · ")}</span>
     </Panel>
