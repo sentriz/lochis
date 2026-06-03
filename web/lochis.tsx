@@ -107,7 +107,7 @@ function App() {
           value={
             stats === undefined
               ? "…"
-              : `${Math.round(stats.distance_km).toLocaleString()} km`
+              : `~${Math.round(stats.distance_km).toLocaleString()} km`
           }
         />
         <Stat
