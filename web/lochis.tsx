@@ -3,6 +3,7 @@ import type { CSSProperties, ReactNode, MouseEvent } from "react";
 import ReactDOM from "react-dom/client";
 import { createPortal } from "react-dom";
 import { Map, Source, Layer, Marker } from "@vis.gl/react-maplibre";
+import maplibregl from "maplibre-gl";
 import type {
   MapLibreEvent,
   Map as MapLibreMap,
@@ -11,6 +12,8 @@ import type {
   CircleLayerSpecification,
 } from "maplibre-gl";
 import type { Feature } from "geojson";
+
+maplibregl.setWorkerCount(4);
 
 type FeatureCollection = { type: "FeatureCollection"; features: Feature[] };
 type TagResp = { id: number; name: string; colour: string };
@@ -87,7 +90,9 @@ function App() {
           bearing,
           pitch,
         }}
-        onIdle={syncMap}
+        onLoad={syncMap}
+        onMoveEnd={syncMap}
+        projection="mercator"
         style={{ width: "100%", height: "100%" }}
         mapStyle={
           config

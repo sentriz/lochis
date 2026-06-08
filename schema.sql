@@ -23,3 +23,8 @@ create unique index tags_name on tags (name);
 
 alter table history
     add column tag_id integer default null references tags (id) on delete set null;
+
+-- 2026.06.08 covering index for viewport queries --
+drop index history_lat_lng;
+
+create index history_lat_lng on history (latitude, longitude, altitude, tag_id);
