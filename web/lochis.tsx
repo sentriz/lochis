@@ -55,7 +55,7 @@ function App() {
   const gran = useHash("g", String, BUCKETS[0].label);
 
   const config = useFetch<Config>("/config", parseJSON);
-  const now = useFetch<NowResp>("/now", parseJSON);
+  const now = useFetch<NowResp>("/now", parseJSON, usePollTick(10_000));
 
   const { geoJSON, histogram, stats, captureViewport } = useMapData({
     start,
@@ -581,6 +581,7 @@ const taggedPaint = (colour: string): CircleLayerSpecification["paint"] => ({
 function useFetch<T>(
   url: string | null,
   parse: (resp: Response) => Promise<T>,
+  tick = 0,
 ): T | undefined {
   const [data, setData] = useState<T | undefined>(undefined);
   useEffect(() => {
@@ -590,8 +591,26 @@ function useFetch<T>(
       if (resp.ok) setData(await parse(resp));
     });
     return () => controller.abort();
-  }, [url]);
+  }, [url, tick]);
   return data;
+}
+
+function usePollTick(ms: number) {
+  const [tick, setTick] = useState(0);
+  useEffect(() => {
+    const bump = () => {
+      if (document.visibilityState === "visible") setTick((t) => t + 1);
+    };
+    const id = setInterval(bump, ms);
+    addEventListener("focus", bump);
+    addEventListener("visibilitychange", bump);
+    return () => {
+      clearInterval(id);
+      removeEventListener("focus", bump);
+      removeEventListener("visibilitychange", bump);
+    };
+  }, [ms]);
+  return tick;
 }
 
 function useMapData({
