@@ -44,6 +44,9 @@ type Config = {
 
 const EMPTY_FC: FeatureCollection = { type: "FeatureCollection", features: [] };
 
+const POLL_MS = 10_000;
+const SLOW_MS = 1_000;
+
 function App() {
   const lat = useHash("lt", Number, 51.5);
   const lng = useHash("lg", Number, 0);
@@ -54,8 +57,9 @@ function App() {
   const end = useHash("e", String);
   const gran = useHash("g", String, BUCKETS[0].label);
 
-  const config = useFetch<Config>("/config", parseJSON);
-  const now = useFetch<NowResp>("/now", parseJSON, usePollTick(10_000));
+  const { data: config } = useFetch<Config>("/config", parseJSON);
+  const [tick, refetch] = usePollTick(POLL_MS);
+  const { data: now, stale } = useFetch<NowResp>("/now", parseJSON, tick);
 
   const { geoJSON, histogram, stats, captureViewport } = useMapData({
     start,
@@ -104,7 +108,7 @@ function App() {
           <History slot={historySlot} />
           <Tags tags={config?.tags ?? []} slot={tagsSlot} />
         </Source>
-        <Now now={now} slot={nowSlot} />
+        <Now now={now} stale={stale} refetch={refetch} slot={nowSlot} />
       </Map>
       <Panel className="absolute top-4 right-4 z-10 px-3 py-2 flex divide-x divide-gray-200">
         <Stat
@@ -242,16 +246,17 @@ function Tags({ tags, slot }: { tags: TagResp[]; slot: HTMLElement | null }) {
 
 function Now({
   now,
+  stale,
+  refetch,
   slot,
 }: {
   now: NowResp | undefined;
+  stale: boolean;
+  refetch: () => void;
   slot: HTMLElement | null;
 }) {
   const [visible, setVisible] = useState(true);
   if (!now) return null;
-
-  const recent =
-    Date.now() - new Date(now.history.time).getTime() < 20 * 60 * 1000;
 
   return (
     <>
@@ -261,22 +266,12 @@ function Now({
           latitude={now.history.latitude}
         >
           <div className="inline-flex rounded-full ring-2 ring-white shadow-md">
-            {recent ? (
-              <PulseDot className="size-3" />
-            ) : (
-              <span className="block size-3 rounded-full bg-blue-500/50" />
-            )}
+            <NowDot time={now.history.time} stale={stale} className="size-3" />
           </div>
         </Marker>
       )}
       {createPortal(
-        <LastSeen
-          time={now.history.time}
-          speed={now.history.speed}
-          altitude={now.history.altitude}
-          city={now.city}
-          recent={recent}
-        />,
+        <LastSeen now={now} stale={stale} refetch={refetch} />,
         document.body,
       )}
       {slot &&
@@ -294,37 +289,28 @@ function Now({
 }
 
 function LastSeen({
-  time,
-  speed,
-  altitude,
-  city,
-  recent,
+  now,
+  stale,
+  refetch,
 }: {
-  time: string;
-  speed: number;
-  altitude: number;
-  city?: CityResp;
-  recent: boolean;
+  now: NowResp;
+  stale: boolean;
+  refetch: () => void;
 }) {
-  const [ago, setAgo] = useState("");
-  useEffect(() => {
-    const update = () => {
-      const diff = Date.now() - new Date(time).getTime();
-      setAgo(diff < 60_000 ? "just now" : `${formatDuration(diff)} ago`);
-    };
-    update();
-    const id = setInterval(update, 30_000);
-    return () => clearInterval(id);
-  }, [time]);
+  const { time, speed, altitude } = now.history;
 
-  const parts = [ago];
-  if (city) parts.push(`${city.name}, ${city.country}`);
+  const diff = Date.now() - new Date(time).getTime();
+  const parts = [diff < 60_000 ? "just now" : `${formatDuration(diff)} ago`];
+  if (now.city) parts.push(`${now.city.name}, ${now.city.country}`);
   if (speed > 0) parts.push(`${Math.round(speed * 3.6)} km/h`);
   if (altitude > 0) parts.push(`${Math.round(altitude)} m`);
 
   return (
-    <Panel className="absolute top-4 left-4 w-fit sm:inset-x-0 sm:mx-auto z-10 px-3 py-1.5 whitespace-nowrap flex items-center gap-1.5">
-      {recent && <PulseDot />}
+    <Panel
+      onClick={refetch}
+      className={`absolute top-4 left-4 w-fit sm:inset-x-0 sm:mx-auto z-10 px-3 py-1.5 whitespace-nowrap flex items-center gap-1.5 cursor-pointer transition-opacity ${stale ? "opacity-50" : ""}`}
+    >
+      <NowDot time={time} stale={stale} />
       <span>{parts.join(" · ")}</span>
     </Panel>
   );
@@ -459,13 +445,16 @@ function Histogram({
 
 function Panel({
   className,
+  onClick,
   children,
 }: {
   className?: string;
+  onClick?: () => void;
   children?: ReactNode;
 }) {
   return (
     <div
+      onClick={onClick}
       className={`bg-white/90 rounded-lg shadow text-xs font-sans select-none ${className ?? ""}`}
     >
       {children}
@@ -497,11 +486,34 @@ function Swatch({
   );
 }
 
-function PulseDot({ className }: { className?: string }) {
+function NowDot({
+  time,
+  stale,
+  className,
+}: {
+  time: string;
+  stale: boolean;
+  className?: string;
+}) {
+  const live = Date.now() - new Date(time).getTime() < 20 * 60 * 1000;
+
+  const halo = stale ? "bg-gray-400" : "bg-blue-400";
+  const dot = stale
+    ? live
+      ? "bg-gray-400"
+      : "bg-gray-400/50"
+    : live
+      ? "bg-blue-500"
+      : "bg-blue-500/50";
+
   return (
     <span className={`relative flex ${className ?? "size-2.5"}`}>
-      <span className="animate-ping absolute inline-flex size-full rounded-full bg-blue-400 opacity-75" />
-      <span className="relative inline-flex size-full rounded-full bg-blue-500" />
+      {live && (
+        <span
+          className={`animate-ping absolute inline-flex size-full rounded-full opacity-75 ${halo}`}
+        />
+      )}
+      <span className={`relative inline-flex size-full rounded-full ${dot}`} />
     </span>
   );
 }
@@ -582,35 +594,45 @@ function useFetch<T>(
   url: string | null,
   parse: (resp: Response) => Promise<T>,
   tick = 0,
-): T | undefined {
+): { data?: T; stale: boolean } {
   const [data, setData] = useState<T | undefined>(undefined);
+  const [stale, setStale] = useState(false);
   useEffect(() => {
     if (!url) return;
     const controller = new AbortController();
+    const slow = setTimeout(() => setStale(true), SLOW_MS);
     fetchAborting(url, controller.signal, async (resp) => {
-      if (resp.ok) setData(await parse(resp));
-    });
-    return () => controller.abort();
+      if (!resp.ok) throw new Error(`${url}: ${resp.status}`);
+      setData(await parse(resp));
+      setStale(false);
+    })
+      .catch(() => setStale(true))
+      .finally(() => clearTimeout(slow));
+    return () => {
+      controller.abort();
+      clearTimeout(slow);
+    };
   }, [url, tick]);
-  return data;
+  return { data, stale };
 }
 
-function usePollTick(ms: number) {
+function usePollTick(ms: number): [number, () => void] {
   const [tick, setTick] = useState(0);
+  const bump = () => setTick((t) => t + 1);
   useEffect(() => {
-    const bump = () => {
+    const bumpVisible = () => {
       if (document.visibilityState === "visible") setTick((t) => t + 1);
     };
-    const id = setInterval(bump, ms);
-    addEventListener("focus", bump);
-    addEventListener("visibilitychange", bump);
+    const id = setInterval(bumpVisible, ms);
+    addEventListener("focus", bumpVisible);
+    addEventListener("visibilitychange", bumpVisible);
     return () => {
       clearInterval(id);
-      removeEventListener("focus", bump);
-      removeEventListener("visibilitychange", bump);
+      removeEventListener("focus", bumpVisible);
+      removeEventListener("visibilitychange", bumpVisible);
     };
   }, [ms]);
-  return tick;
+  return [tick, bump];
 }
 
 function useMapData({
@@ -656,9 +678,10 @@ function useMapData({
     histUrl = `/histogram/history?${histParams}`;
   }
 
-  const geoJSON = useFetch(geoUrl, parseGeoJSON) ?? EMPTY_FC;
-  const histogram = useFetch<BucketResp[]>(histUrl, parseJSON) ?? [];
-  const stats = useFetch<StatsResp>(statsUrl, parseJSON);
+  const { data: geoJSON = EMPTY_FC } = useFetch(geoUrl, parseGeoJSON);
+  const { data: histogram = [] } = useFetch<BucketResp[]>(histUrl, parseJSON);
+
+  const { data: stats } = useFetch<StatsResp>(statsUrl, parseJSON);
 
   return { geoJSON, histogram, stats, captureViewport };
 }
