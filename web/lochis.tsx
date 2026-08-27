@@ -669,7 +669,12 @@ function useMapData({
     if (end) geoParams.set("end", end);
 
     geoUrl = `/geojson/history?${geoParams}`;
-    statsUrl = `/stats/history?${geoParams}`;
+
+    const statsParams = new URLSearchParams(params);
+    if (start) statsParams.set("start", start);
+    if (end) statsParams.set("end", end);
+
+    statsUrl = `/stats/history?${statsParams}`;
 
     const bucket = BUCKETS.find((b) => b.label === gran) ?? BUCKETS[0];
     const histParams = new URLSearchParams(params);

@@ -32,6 +32,9 @@ import (
 	"golang.org/x/tools/txtar"
 )
 
+// beyond this a fix is cell or IP derived and can land tens of km away.
+const maxAccuracy = 50
+
 var (
 	//go:embed schema.sql
 	schema []byte
@@ -163,33 +166,53 @@ func main() {
 		ctx := r.Context()
 		params := r.URL.Query()
 
-		q := sqlb.NewQuery("select latitude, longitude from history where 1")
-		q.Append("and ?", historyViewportFilter(params))
-		q.Append("order by time")
+		// dropping off screen points would join the track with a straight line that was never walked, so keep them all and count only legs with both ends visible
+		q := sqlb.NewQuery("select time, latitude, longitude from history where tag_id is null")
+		q.Append("and ?", historyTimeFilter(params))
+		q.Append("and (accuracy = 0 or accuracy <= ?)", maxAccuracy) // 0 is unknown
+		q.Append("order by time, id")
+
+		south, north, west, east := historyViewport(params)
 
 		// measure from the last accepted anchor so stationary jitter never advances it.
 		// tuned to GPS jitter radius (tens of metres), independent of sample rate
 		const minStepKm = 0.04
+		const maxGap = 6 * time.Hour
 
 		var distance float64
 		var count int
+		var anchorTime time.Time
 		var anchorLat, anchorLng float64
-		var have bool
+		var anchorVisible, have bool
+		var tm time.Time
 		var lat, lng float64
-		for err := range sqlb.Each(ctx, db, sqlb.Scan(&lat, &lng), "?", q) {
+		for err := range sqlb.Each(ctx, db, sqlb.Scan(&tm, &lat, &lng), "?", q) {
 			if err != nil {
 				slog.ErrorContext(ctx, "scan history stats", "err", err)
 				continue
 			}
-			count++
-			if !have {
-				anchorLat, anchorLng, have = lat, lng, true
+			if lat == 0 && lng == 0 {
 				continue
 			}
-			if step := haversineKm(anchorLat, anchorLng, lat, lng); step >= minStepKm {
-				distance += step
-				anchorLat, anchorLng = lat, lng
+
+			vis := lat >= south && lat <= north && lng >= west && lng <= east
+			if vis {
+				count++
 			}
+
+			if !have || tm.Sub(anchorTime) > maxGap {
+				anchorTime, anchorLat, anchorLng, anchorVisible, have = tm, lat, lng, vis, true
+				continue
+			}
+
+			step := haversineKm(anchorLat, anchorLng, lat, lng)
+			if step < minStepKm {
+				continue
+			}
+			if vis && anchorVisible {
+				distance += step
+			}
+			anchorTime, anchorLat, anchorLng, anchorVisible = tm, lat, lng, vis
 		}
 
 		resp := struct {
@@ -228,6 +251,8 @@ func main() {
 		h.Time, _ = time.Parse(time.RFC3339Nano, r.FormValue("time"))
 		h.Speed, _ = strconv.ParseFloat(r.FormValue("speed"), 64)
 		h.Altitude, _ = strconv.ParseFloat(r.FormValue("alt"), 64)
+		h.Accuracy, _ = strconv.ParseFloat(r.FormValue("acc"), 64)
+		h.Provider = r.FormValue("prov")
 
 		if h.Latitude == 0 || h.Longitude == 0 || h.Time.IsZero() {
 			http.Error(w, "missing required params: lat, lng, time", http.StatusBadRequest)
@@ -354,6 +379,8 @@ type History struct {
 	Latitude  float64       `json:"latitude"`
 	Longitude float64       `json:"longitude"`
 	TagID     sql.NullInt64 `json:"tag_id"`
+	Accuracy  float64       `json:"accuracy"` // m, 0 unknown
+	Provider  string        `json:"provider"`
 }
 
 func dbMigrate(ctx context.Context, db *sql.DB) error {
@@ -407,6 +434,10 @@ func importData(ctx context.Context, db *sql.DB, src io.Reader) error {
 			h.Latitude, _ = strconv.ParseFloat(record[3], 64)
 			h.Longitude, _ = strconv.ParseFloat(record[4], 64)
 
+			if h.Latitude == 0 && h.Longitude == 0 {
+				continue
+			}
+
 			if tagID := tagIDs[record[5]]; tagID > 0 {
 				h.TagID.Int64 = int64(tagID)
 				h.TagID.Valid = true
@@ -424,16 +455,27 @@ func importData(ctx context.Context, db *sql.DB, src io.Reader) error {
 	return nil
 }
 
+func historyViewport(params url.Values) (south, north, west, east float64) {
+	south, _ = strconv.ParseFloat(params.Get("south"), 64)
+	north, _ = strconv.ParseFloat(params.Get("north"), 64)
+	west, _ = strconv.ParseFloat(params.Get("west"), 64)
+	east, _ = strconv.ParseFloat(params.Get("east"), 64)
+	return south, north, west, east
+}
+
 func historyViewportFilter(params url.Values) sqlb.Query {
-	south, _ := strconv.ParseFloat(params.Get("south"), 64)
-	north, _ := strconv.ParseFloat(params.Get("north"), 64)
-	west, _ := strconv.ParseFloat(params.Get("west"), 64)
-	east, _ := strconv.ParseFloat(params.Get("east"), 64)
+	south, north, west, east := historyViewport(params)
 
 	q := sqlb.NewQuery("1")
 	q.Append("and latitude between ? and ?", south, north)
 	q.Append("and longitude between ? and ?", west, east)
 	q.Append("and altitude < ?", 3000)
+	q.Append("and ?", historyTimeFilter(params))
+	return q
+}
+
+func historyTimeFilter(params url.Values) sqlb.Query {
+	q := sqlb.NewQuery("1")
 
 	// cast to text: the column has NUMERIC affinity, so '2024' would coerce to an int and TEXT > number is always true
 	if v := params.Get("start"); v != "" {

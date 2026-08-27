@@ -28,3 +28,10 @@ alter table history
 drop index history_lat_lng;
 
 create index history_lat_lng on history (latitude, longitude, altitude, tag_id);
+
+-- 2026.08.27 add fix quality --
+alter table history
+    add column accuracy real not null default 0;
+
+alter table history
+    add column provider text not null default "";
